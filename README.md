@@ -2,9 +2,11 @@
 
 > Informational watchlists, sourced market context and alerts. No custody, no order execution.
 
-**Status:** alpha (roadmap Wave 19). The service runs and its tests pass. It is **not deployed**,
-`openvibe.trade` still shows its placeholder from OpenVibe.Sites, and its capabilities and service
-manifest are proposals that the next openvibe-contracts release has to include. No market data
+**Status:** alpha (roadmap Wave 19). The service runs and its tests pass. It is **deployed
+internally, not launched**: it runs on the production host on 127.0.0.1:4860 only (release
+`9a55644`; `/api/ready` reports `degraded: ["freshness"]` because there is no feed), with an empty
+database (0 instruments), and `openvibe.trade` still shows its placeholder from OpenVibe.Sites. Its
+capabilities and service manifest are registered in openvibe-contracts v0.22.0. No market data
 feed is configured yet (see "What it shows today").
 **Domain:** `openvibe.trade` · **Port:** 4860 · **Service id:** `trade`
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §12.11;
@@ -163,11 +165,11 @@ Service tokens use audience `openvibe.trade`, one capability per route; private 
 `X-OV-Subject` (the person the service acts for). Browsers with a Network JWT are judged by ownership
 and the editor list. The charter's `trade.watchlist.create|update`, `trade.instrument.resolve`,
 `trade.alert.create|delete` and `trade.context.read` are all 3-segment ids here; `read`, `delete`,
-`manage`, `observation.write` and `context.propose` are additions. Proposals:
+`manage`, `observation.write` and `context.propose` are additions. They and the service manifest
+are released in openvibe-contracts v0.22.0 from the proposals in
 [docs/capabilities-proposal/](docs/capabilities-proposal/) and
-[docs/service-manifest-proposal.json](docs/service-manifest-proposal.json). Until the release,
-grants for these ids are decided locally with the contracts library's matching rule
-(`server/auth/capabilities.js`).
+[docs/service-manifest-proposal.json](docs/service-manifest-proposal.json). Grants for these ids are
+decided with the contracts library's matching rule (`server/auth/capabilities.js`).
 
 ### Events (SDK outbox, same transaction as the change)
 
@@ -194,10 +196,10 @@ webhook, as a wake-up for the cursor sync (the webhook is not durable truth; the
 
 ## Depends on
 
-- **Packages** (pinned by release tarball): `openvibe-contracts` v0.19.0, `openvibe-publishing`
-  v0.2.0 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.3.0 (chrome, app icon,
-  footer, legal, release, metrics, ready), `openvibe-sdk` v0.2.2 (events outbox and inbox, service
-  tokens).
+- **Packages** (pinned by release tarball): `openvibe-contracts` v0.22.0, `openvibe-publishing`
+  v0.2.1 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.3.0 (chrome, app icon,
+  footer, legal, release, metrics, ready), `openvibe-sdk` v0.4.0 (events outbox and inbox, webhook
+  signatures v2, service tokens).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
   JWKS, client-credentials tokens.
 - **OpenVibe.Sources:** `sources.item.read` and `sources.source.read` (category `trade`).
@@ -245,10 +247,11 @@ exists. Status against each point:
 1. **Runtime, health, readiness, observability:** done.
 2. **Canonical identity and auth:** done (Network SSO, subjects, service tokens).
 3. **SSR public routes useful without JS:** done.
-4. **Persistence and end-to-end workflows:** done in tests; in production there is no market data
-   source yet and the filings source is disabled in Sources (see "What it shows today").
-5. **Capability and event registration against OpenVibe.Contracts:** proposals are in `docs/`,
-   waiting on the release.
+4. **Persistence and end-to-end workflows:** done in tests and deployed on the host (loopback only,
+   empty database); in production there is no market data source yet and the filings source is
+   disabled in Sources (see "What it shows today").
+5. **Capability and event registration against OpenVibe.Contracts:** done (openvibe-contracts
+   v0.22.0).
 6. **Migration and seed strategy, threat review, sitemap/robots/feed behaviour:** done. Nothing to
    migrate (no current implementation); no seed (editors add instruments); threat review below.
 7. **Acceptance tests:** done.
@@ -275,7 +278,8 @@ registry, atomically. A placeholder never counts as an implemented service.
   AI drafts are labelled and gated by a person's review.
 - **SSRF:** Trade fetches only its configured Network and Sources hosts; it never fetches a URL from
   a source item (it links to it).
-- **Webhook:** HMAC-verified raw body, inbox per event id, host-local only (nginx returns 404).
+- **Webhook:** signature v2 only (HMAC over `<timestamp>.<raw body>`, timestamp within the replay
+  window; a v1-only or stale delivery is refused), inbox per event id, host-local only (nginx returns 404).
 - **Abuse:** rate limits on `/auth`, private forms and `/api/v1`, in Express and in the nginx
   reference; per-person limits of 20 watchlists × 200 instruments and 100 alert rules.
 - **Known gaps:** the advice filter is a phrase guard, not a guarantee (editors remain accountable);
@@ -304,8 +308,8 @@ fnm exec --using=22.22.1 npm run dev       # http://localhost:4860 (set OV_OAUTH
 4. **Search:** add `trade` to `SEARCH_EVENT_OWNERS` if it is not there.
 5. **systemd:** install `deploy/systemd/openvibe-trade.service` (port 4860, `StateDirectory=openvibe-trade`).
 6. **nginx:** install `deploy/nginx/openvibe.trade.conf` (`/metrics` and `/internal/` never proxied).
-7. **Contracts:** release the capability and manifest proposals; then CI's contracts check can drop
-   `continue-on-error`.
+7. **Contracts:** done: the capabilities and manifest are released in openvibe-contracts v0.22.0,
+   and CI's contracts check runs against them.
 8. **Data:** editors add instruments at `/editor`. Filings appear once `sec-xbrl-filings` is enabled
    in Sources (after a person verifies its terms); numbers appear only once a market data source
    exists and states them.

@@ -16,6 +16,5 @@ jobs:
       # Includes test/route-inventory.test.js: the build fails if any route, handler, capability or
       # event carries order/buy/sell/execution/custody/wallet/escrow/checkout/listing semantics (ADR-025).
       - run: npm test
-      # Trade's service manifest and capabilities are proposals (docs/) until the lead releases them
-      # in openvibe-contracts; until then the check reports that the manifest is a placeholder.
+      # Trade's service manifest and capabilities are released in openvibe-contracts (v0.22.0).
       - run: npx openvibe-contracts-check --service trade --src server

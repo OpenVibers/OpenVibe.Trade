@@ -9,10 +9,10 @@
   "domain": "openvibe.trade",
   "scope": "informational only (ADR-025): no custody, no order execution, no escrow, no listings between users, no personalised advice",
   "packages": [
-    "openvibe-contracts v0.19.0",
-    "openvibe-publishing v0.2.0",
+    "openvibe-contracts v0.22.0",
+    "openvibe-publishing v0.2.1",
     "openvibe-shared v1.3.0",
-    "openvibe-sdk v0.2.2"
+    "openvibe-sdk v0.4.0"
   ],
   "capabilities": [
     "trade.instrument.resolve",
@@ -28,11 +28,12 @@
     "trade.alert.create",
     "trade.alert.delete"
   ],
-  "capabilitiesRegistered": false,
-  "serviceManifestRegistered": false,
+  "capabilitiesRegistered": true,
+  "serviceManifestRegistered": true,
   "marketDataFeeds": "none configured: the only seeded trade source in OpenVibe.Sources (SEC EDGAR XBRL filings RSS) is disabled there, and it carries filings, not prices; no observation exists until a source states one",
-  "seed": "none (tests create their own instruments)",
-  "deployed": false,
+  "seed": "none (tests create their own instruments; production holds 0 instruments and 0 observations)",
+  "deployed": true,
+  "deployment": "openvibe-ovh, unit openvibe-trade, 127.0.0.1:4860 loopback only (release 9a55644); /api/ready 200 with status degraded [freshness], which is honest: no feed is configured; Network OAuth client trade and its grants exist; no Events subscription; production database holds 0 instruments and 0 observations. Deployed internally, not launched: openvibe.trade still serves the OpenVibe.Sites placeholder until a person verifies the SEC XBRL terms and enables sec-xbrl-filings in Sources, a licensed market data feed exists, and editors add instruments",
   "placeholderInSites": true,
-  "updated": "2026-09-22"
+  "updated": "2026-09-23"
 }
