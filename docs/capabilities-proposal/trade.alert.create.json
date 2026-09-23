@@ -1,0 +1,21 @@
+{
+  "id": "trade.alert.create",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Create an alert rule for the person in X-OV-Subject: threshold (a crossing of a metric in a unit), filing_type or new_document. Deliveries are unique per (rule, triggering observation or document) and are sent as trade.alert.triggered (visibility subject); no email.",
+  "permissions": [
+    "trade:write"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "trade-write",
+  "events": [
+    "trade.alert.triggered"
+  ],
+  "implementedBy": [
+    "POST /api/v1/alerts"
+  ]
+}

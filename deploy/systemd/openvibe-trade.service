@@ -1,0 +1,32 @@
+[Unit]
+Description=OpenVibe.Trade — informational market context (no custody, no order execution)
+# Network (sign-in, JWKS, service tokens), Sources (the trade category) and Events (the outbox
+# relay) should be up first, but Trade degrades gracefully without them: pages and feeds serve what
+# was recorded, marked stale as it ages; sign-in, sync and events wait (see /api/ready).
+After=network.target
+Wants=openvibe-network.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/openvibe.trade
+EnvironmentFile=/etc/openvibe/trade.env
+Environment=NODE_ENV=production
+Environment=PORT=4860
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env node /opt/openvibe.trade/server/index.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# Trade's own database lives in /var/lib/openvibe-trade; the code tree stays read-only.
+StateDirectory=openvibe-trade
+Environment=TRADE_DB_PATH=/var/lib/openvibe-trade/trade.db
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+{
+  "id": "trade.context.propose",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Deliver a context revision. With X-OV-Origin: ai it is OpenVibe.AI output (workflow trade.summarize_market_context and its run id required): authorship ai, never attributed to a person, stored as a draft that cannot be published before a person on the editor list approves it. Text that reads as a recommendation to trade is refused.",
+  "permissions": [
+    "trade:write"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "trade-write",
+  "events": [],
+  "implementedBy": [
+    "POST /api/v1/instruments/:symbol/context"
+  ]
+}

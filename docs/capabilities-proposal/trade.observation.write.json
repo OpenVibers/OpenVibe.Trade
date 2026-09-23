@@ -1,0 +1,26 @@
+{
+  "id": "trade.observation.write",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Record a market observation a source stated: value exactly as stated, unit, currency, observed_at (required, never inferred), source key and reference, retrieved_at (required). Idempotent per (source_key, source_ref); a different value under the same reference is 409. Services only.",
+  "permissions": [
+    "trade:write"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "trade-write",
+  "events": [
+    "trade.observation.created",
+    "trade.alert.triggered",
+    "trade.source.stale",
+    "trade.source.recovered",
+    "trade.index_document.upserted",
+    "trade.index_document.deleted"
+  ],
+  "implementedBy": [
+    "POST /api/v1/observations"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "trade.instrument.manage",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Create and edit instruments (symbol, name, kind, exchange, CIK, currency, status) and add ticker, CIK or name aliases. People must also be on the Trade editor list.",
+  "permissions": [
+    "trade:write"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "trade-write",
+  "events": [
+    "trade.index_document.upserted",
+    "trade.index_document.deleted"
+  ],
+  "implementedBy": [
+    "POST /api/v1/instruments",
+    "PATCH /api/v1/instruments/:symbol",
+    "POST /api/v1/instruments/:symbol/aliases"
+  ]
+}

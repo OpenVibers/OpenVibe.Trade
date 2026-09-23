@@ -1,0 +1,20 @@
+{
+  "id": "trade.watchlist.read",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Read the watchlists of the person in X-OV-Subject (never anyone else's: another person's watchlist is 404).",
+  "permissions": [
+    "trade:read"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "trade-read",
+  "events": [],
+  "implementedBy": [
+    "GET /api/v1/watchlists",
+    "GET /api/v1/watchlists/:id"
+  ]
+}

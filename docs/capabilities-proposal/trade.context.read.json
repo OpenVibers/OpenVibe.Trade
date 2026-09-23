@@ -1,0 +1,20 @@
+{
+  "id": "trade.context.read",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Read an instrument's published context with its citations and disclosure; with ?all=1 the drafts awaiting review; and the numbered-source input for OpenVibe.AI's trade.summarize_market_context workflow.",
+  "permissions": [
+    "trade:read"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "trade-read",
+  "events": [],
+  "implementedBy": [
+    "GET /api/v1/instruments/:symbol/context",
+    "GET /api/v1/instruments/:symbol/context/input"
+  ]
+}

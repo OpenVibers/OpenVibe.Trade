@@ -1,0 +1,19 @@
+{
+  "id": "trade.alert.delete",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Delete an alert rule of the person in X-OV-Subject.",
+  "permissions": [
+    "trade:write"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "trade-write",
+  "events": [],
+  "implementedBy": [
+    "DELETE /api/v1/alerts/:id"
+  ]
+}

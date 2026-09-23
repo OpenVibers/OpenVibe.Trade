@@ -1,0 +1,21 @@
+{
+  "id": "trade.watchlist.update",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Rename a watchlist of the person in X-OV-Subject, or add and remove instruments on it.",
+  "permissions": [
+    "trade:write"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "trade-write",
+  "events": [],
+  "implementedBy": [
+    "PATCH /api/v1/watchlists/:id",
+    "PUT /api/v1/watchlists/:id/items/:symbol",
+    "DELETE /api/v1/watchlists/:id/items/:symbol"
+  ]
+}

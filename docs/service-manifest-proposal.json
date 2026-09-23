@@ -1,0 +1,48 @@
+{
+  "version": "0.1.0",
+  "contractRanges": {
+    "openvibe-contracts": ">=0.19.0 <1.0.0"
+  },
+  "id": "trade",
+  "name": "OpenVibe.Trade",
+  "status": "alpha",
+  "repository": "OpenVibers/OpenVibe.Trade",
+  "domains": [
+    "openvibe.trade"
+  ],
+  "publicOrigin": "https://openvibe.trade",
+  "health": "/api/health",
+  "ready": "/api/ready",
+  "capabilities": [
+    "trade.instrument.resolve",
+    "trade.instrument.manage",
+    "trade.observation.write",
+    "trade.context.read",
+    "trade.context.propose",
+    "trade.watchlist.read",
+    "trade.watchlist.create",
+    "trade.watchlist.update",
+    "trade.watchlist.delete",
+    "trade.alert.read",
+    "trade.alert.create",
+    "trade.alert.delete"
+  ],
+  "eventsProduced": [
+    "trade.observation.created",
+    "trade.alert.triggered",
+    "trade.source.stale",
+    "trade.source.recovered",
+    "trade.index_document.upserted",
+    "trade.index_document.deleted"
+  ],
+  "eventsConsumed": [
+    "sources.item.created",
+    "sources.item.updated",
+    "sources.item.removed",
+    "sources.fetch.failed"
+  ],
+  "namespacesOwned": [
+    "trade.*"
+  ],
+  "notes": "Port 4860. Informational only (ADR-025): no custody, order execution, escrow, listings between users or personalised advice. Owns trade_instruments, trade_instrument_aliases, trade_watchlists, trade_watchlist_items, trade_market_observations, trade_source_documents, trade_alert_rules, trade_alert_deliveries, trade_context_revisions in its own SQLite. Reads OpenVibe.Sources (sources.item.read, sources.source.read, category trade) by cursor and wakes on signed sources.* webhook deliveries; consumes OpenVibe.AI trade.summarize_market_context output as reviewed drafts; publishes through OpenVibe.Events (events.event.publish); OpenVibe.Search reads trade.index_document.* from Events."
+}

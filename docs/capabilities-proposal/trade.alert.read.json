@@ -1,0 +1,20 @@
+{
+  "id": "trade.alert.read",
+  "version": "1.0",
+  "owner": "trade",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Read the alert rules and recent deliveries of the person in X-OV-Subject.",
+  "permissions": [
+    "trade:read"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "trade-read",
+  "events": [],
+  "implementedBy": [
+    "GET /api/v1/alerts",
+    "GET /api/v1/alerts/deliveries"
+  ]
+}

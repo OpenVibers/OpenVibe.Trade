@@ -1,0 +1,22 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1   # production runs Node 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # Includes test/route-inventory.test.js: the build fails if any route, handler, capability or
+      # event carries order/buy/sell/execution/custody/wallet/escrow/checkout/listing semantics (ADR-025).
+      - run: npm test
+      # Trade's service manifest and capabilities are proposals (docs/) until the lead releases them
+      # in openvibe-contracts; until then the check reports that the manifest is a placeholder.
+      - run: npx openvibe-contracts-check --service trade --src server
+        continue-on-error: true
