@@ -84,7 +84,8 @@ function createApp(opts = {}) {
     const app = express();
     app.disable('x-powered-by');
     app.set('trust proxy', config.trustProxy);
-    const release = require('openvibe-shared/release').createRelease({ service: 'trade', root: path.join(__dirname, '..') });
+    // metricsPath: open tabs report their update outcomes to POST /release-metrics (defined below).
+    const release = require('openvibe-shared/release').createRelease({ service: 'trade', root: path.join(__dirname, '..'), metricsPath: '/release-metrics' });
     const metrics = require('openvibe-shared/metrics').instrument(app, { service: 'trade', release: release.release });
     app.locals.metrics = metrics.registry;
     app.locals.ctx = ctx;
@@ -116,7 +117,10 @@ function createApp(opts = {}) {
     // ── Machine endpoints ───────────────────────────────────
     const machine = express.Router();
     define(machine, 'get', '/api/health', 'health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-trade', version: VERSION }));
+    // What release.mount(app, { registry }) registers, through define() like every Trade route:
+    // GET /release.json (ADR-016) and POST /release-metrics (release_client_updates_total in /metrics).
     define(machine, 'get', '/release.json', 'releaseInfo', release.handler);
+    define(machine, 'post', '/release-metrics', 'releaseMetrics', release.collect(metrics.registry));
     const readiness = createTradeReadiness({ store, auth: ctx.auth, outbox: ctx.outbox, sync: ctx.sync, freshness: ctx.freshness, release: release.release });
     define(machine, 'get', '/api/ready', 'readiness', readiness.handler);
     app.use(machine);

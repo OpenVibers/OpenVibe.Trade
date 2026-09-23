@@ -126,7 +126,7 @@ deployment has no instruments (editors add them), no documents until the source 
 | `/robots.txt`, `/llms.txt` | crawler policy (private paths disallowed) and orientation |
 | `/terms`, `/privacy`, `/dmca` | openvibe-shared legal pages |
 | `/auth/*` | sign-in; the same session layer as Blog and Community |
-| `/api/health`, `/api/ready`, `/release.json`, `/metrics` | health, readiness, release, metrics (loopback only) |
+| `/api/health`, `/api/ready`, `/release.json`, `POST /release-metrics`, `/metrics` | health, readiness, release, open tabs' update reports (counted in `/metrics`), metrics (loopback only) |
 | `POST /internal/events` | signed OpenVibe.Events deliveries (`sources.*`), host-local |
 
 ### Discoverability (roadmap §32)
@@ -196,9 +196,9 @@ webhook, as a wake-up for the cursor sync (the webhook is not durable truth; the
 
 ## Depends on
 
-- **Packages** (pinned by release tarball): `openvibe-contracts` v0.22.0, `openvibe-publishing`
-  v0.2.1 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.3.0 (chrome, app icon,
-  footer, legal, release, metrics, ready), `openvibe-sdk` v0.4.0 (events outbox and inbox, webhook
+- **Packages** (pinned by release tarball): `openvibe-contracts` v0.32.0, `openvibe-publishing`
+  v0.2.1 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.5.0 (chrome, app icon,
+  footer, legal, release, metrics, ready), `openvibe-sdk` v0.5.0 (events outbox and inbox, webhook
   signatures v2, service tokens).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
   JWKS, client-credentials tokens.

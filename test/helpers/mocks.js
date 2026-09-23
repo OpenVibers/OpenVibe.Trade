@@ -52,8 +52,10 @@ async function startNetwork() {
         return json(404, { error: 'not found' });
     });
     issuer = srv.url;
+    // An app token carries its developer project and env, as Network's do (identity.service-token-claims 1.2.0).
     function signService({ sub, aud, cap, actorType = 'service', extra = {} }) {
-        return serviceAuth.signServiceToken({ iss: issuer, sub, actor_type: actorType, aud, cap, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 300, jti: crypto.randomUUID(), ...extra }, privatePem);
+        const app = actorType === 'app' ? { project_id: 'prj_01J8ZQ4Y7N3M2K1H0G9F8E7D6C', env: 'production' } : {};
+        return serviceAuth.signServiceToken({ iss: issuer, sub, actor_type: actorType, aud, cap, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 300, jti: crypto.randomUUID(), ...app, ...extra }, privatePem);
     }
     function addUser(username, extra = {}) {
         return { subject: ids.newId('user'), username, display_name: extra.display_name || username, role: extra.role || 'user' };

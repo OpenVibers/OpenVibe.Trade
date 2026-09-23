@@ -89,7 +89,13 @@ const DISCLAIMER = 'Information only — not investment advice; no trading here.
         assert.strictEqual(ready.status, 200);
         const body = JSON.stringify(ready.json());
         assert.ok(body.includes('relay off'), 'the events relay is reported off in tests');
-        assert.strictEqual((await t.get('/release.json')).status, 200);
+        const rel = await t.get('/release.json');
+        assert.strictEqual(rel.status, 200);
+        assert.deepStrictEqual(require('openvibe-contracts').validate('registry.release-manifest@1', rel.json()).errors, []);
+        assert.strictEqual(rel.json().metrics_url, '/release-metrics');
+        const report = await t.get('/release-metrics', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ counts: { applied: { style: 1 } } }) });
+        assert.strictEqual(report.status, 204);
+        assert.ok((await t.get('/metrics')).text.includes('release_client_updates_total{outcome="applied",reason="style"} 1\n'));
         const terms = await t.get('/terms');
         assert.strictEqual(terms.status, 200);
         assert.ok(terms.text.includes('OpenVibe.Trade'));
