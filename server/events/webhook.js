@@ -22,7 +22,8 @@ function createWebhook({ store, config, sync, log = console }) {
     router.post('/internal/events', express.raw({ type: '*/*', limit: '1mb' }), function receiveEventsDelivery(req, res) {
         if (!config.events.webhookSecret) return http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov });
         const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
-        const delivery = parseDelivery(raw, req.headers, config.events.webhookSecret);
+        // Signature v2 only: HMAC over "<t>.<raw body>" with t within ±300 s; a v1-only (v2 stripped) or stale delivery is refused.
+        const delivery = parseDelivery(raw, req.headers, config.events.webhookSecret, { requireV2: true });
         if (!delivery) return http.sendProblem(res, 401, 'webhook.signature_invalid', { detail: 'The delivery signature does not verify', ctx: req.ov });
         const e = delivery.event;
         if (typeof e.event_id !== 'string' || typeof e.event_type !== 'string') return http.sendProblem(res, 400, 'webhook.malformed', { detail: 'Not an event envelope', ctx: req.ov });

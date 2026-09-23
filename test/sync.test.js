@@ -6,7 +6,7 @@
  * wakes the sync and is idempotent per event id. Deterministic resolution.
  */
 const assert = require('assert');
-const { signDelivery } = require('openvibe-sdk/events');
+const { signDelivery, signDeliveryHeaders } = require('openvibe-sdk/events');
 const { boot, check, done } = require('./helpers/boot');
 const { mapItem } = require('../server/domain/mapping');
 
@@ -114,17 +114,21 @@ const { mapItem } = require('../server/domain/mapping');
         assert.throws(() => t.ctx.instruments.addAlias(acme, 'cik', '320193'), (e) => e.status === 409);
     });
 
-    await check('the signed webhook wakes the sync once per event id; a bad signature is 401', async () => {
+    await check('the signed webhook wakes the sync once per event id; a bad signature, v1-only or stale v2 is 401', async () => {
         t.sources.putItem({ canonical_url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019326000106/0000320193-26-000106-index.htm', title: 'APPLE INC', summary: '8-K', published_at: '2026-09-22T12:10:00.000Z', retrieved_at: t.iso(t.T0) });
         const body = JSON.stringify({ event: { event_id: 'evt_01JABCDEFGHJKMNPQRSTVWXYZ0', event_type: 'sources.item.created', payload: {} }, seq: 7 });
         const bad = await t.get('/internal/events', { method: 'POST', body, headers: { 'content-type': 'application/json', 'x-openvibe-signature': 'sha256=00' } });
         assert.strictEqual(bad.status, 401);
-        const ok = await t.get('/internal/events', { method: 'POST', body, headers: { 'content-type': 'application/json', 'x-openvibe-signature': signDelivery(body, 'hook-secret') } });
+        const v1only = await t.get('/internal/events', { method: 'POST', body, headers: { 'content-type': 'application/json', 'x-openvibe-signature': signDelivery(body, 'hook-secret') } });
+        assert.strictEqual(v1only.status, 401, 'v1 only: refused (requireV2)');
+        const stale = await t.get('/internal/events', { method: 'POST', body, headers: { 'content-type': 'application/json', ...signDeliveryHeaders(body, 'hook-secret', { now: Date.now() - 301000 }) } });
+        assert.strictEqual(stale.status, 401, 'stale v2 (outside the 300 s window): refused');
+        const ok = await t.get('/internal/events', { method: 'POST', body, headers: { 'content-type': 'application/json', ...signDeliveryHeaders(body, 'hook-secret') } });
         assert.strictEqual(ok.status, 200);
         assert.strictEqual(ok.json().sync, true);
         await t.ctx.sync.run();
         assert.strictEqual((await t.get('/i/AAPL.json')).json().documents.length, 1);
-        const again = await t.get('/internal/events', { method: 'POST', body, headers: { 'content-type': 'application/json', 'x-openvibe-signature': signDelivery(body, 'hook-secret') } });
+        const again = await t.get('/internal/events', { method: 'POST', body, headers: { 'content-type': 'application/json', ...signDeliveryHeaders(body, 'hook-secret') } });
         assert.strictEqual(again.json().duplicate, true);
         assert.strictEqual(again.json().sync, false);
     });
