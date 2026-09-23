@@ -19,4 +19,3 @@ jobs:
       # Trade's service manifest and capabilities are proposals (docs/) until the lead releases them
       # in openvibe-contracts; until then the check reports that the manifest is a placeholder.
       - run: npx openvibe-contracts-check --service trade --src server
-        continue-on-error: true
