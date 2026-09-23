@@ -13,6 +13,8 @@
  *       X-OV-Subject names the person it acts for (watchlists and alert rules need one);
  *       X-OV-Origin: ai marks AI output (OpenVibe.AI's trade.summarize_market_context), which is
  *       never attributed to a person and stays a draft until a person reviews it.
+ *       Developer-app (app:…) and module (mod:…) tokens act only for the person in their
+ *       on_behalf_of claim: X-OV-Subject naming anyone else is 403, and sandbox tokens are 401.
  *
  * Identity never comes from a request body or query. A request presenting a service token is judged
  * on that token alone: a bad one is refused (problem+json), never downgraded to anonymous.
@@ -39,15 +41,28 @@ function createViewerResolver({ auth, config }) {
         if (!publicKey) throw new ViewerError(503, 'identity.unavailable', 'the Network signing key is not loaded yet');
         const r = serviceAuth.verifyServiceToken(token, { publicKey, issuer: config.networkUrl, audience: AUDIENCE });
         if (!r.ok) throw new ViewerError(401, r.code, r.reason);
+        // Developer apps (app:…) and modules (mod:…) are third parties: they act only for the person
+        // who authorized them (on_behalf_of), never for whoever X-OV-Subject names. Only first-party
+        // service principals (svc:…) are trusted to name the acting person.
+        const claims = r.claims;
+        const firstParty = claims.actor_type === 'service' && String(claims.sub).startsWith('svc:');
+        if (!firstParty && claims.env !== undefined && claims.env !== 'production') {
+            throw new ViewerError(401, 'token.sandbox_refused', 'sandbox tokens are not accepted by openvibe.trade');
+        }
         const originHeader = req.get('x-ov-origin');
         if (originHeader && originHeader !== 'ai' && originHeader !== 'user') throw new ViewerError(400, 'request.invalid_origin', 'X-OV-Origin must be "ai" or "user"');
         const subjectHeader = req.get('x-ov-subject');
         let subject = null;
         if (subjectHeader) {
             if (!ids.isSubjectId('user', subjectHeader)) throw new ViewerError(400, 'subject.invalid', 'X-OV-Subject must be a usr_… subject id');
+            if (!firstParty && subjectHeader !== claims.on_behalf_of) {
+                throw new ViewerError(403, 'subject.not_delegated', 'an app acts only for the person who authorized it (on_behalf_of)');
+            }
             subject = subjectHeader;
+        } else if (!firstParty && ids.isSubjectId('user', claims.on_behalf_of)) {
+            subject = claims.on_behalf_of;
         }
-        return { kind: 'service', service: r.claims.sub, claims: r.claims, subject, origin: originHeader === 'ai' ? 'ai' : 'user', editor: false };
+        return { kind: 'service', service: claims.sub, claims, subject, origin: originHeader === 'ai' ? 'ai' : 'user', editor: false };
     }
 
     async function fromUserToken(token) {

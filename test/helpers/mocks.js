@@ -52,8 +52,8 @@ async function startNetwork() {
         return json(404, { error: 'not found' });
     });
     issuer = srv.url;
-    function signService({ sub, aud, cap }) {
-        return serviceAuth.signServiceToken({ iss: issuer, sub, actor_type: 'service', aud, cap, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 300, jti: crypto.randomUUID() }, privatePem);
+    function signService({ sub, aud, cap, actorType = 'service', extra = {} }) {
+        return serviceAuth.signServiceToken({ iss: issuer, sub, actor_type: actorType, aud, cap, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 300, jti: crypto.randomUUID(), ...extra }, privatePem);
     }
     function addUser(username, extra = {}) {
         return { subject: ids.newId('user'), username, display_name: extra.display_name || username, role: extra.role || 'user' };
