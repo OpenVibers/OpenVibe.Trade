@@ -196,8 +196,8 @@ webhook, as a wake-up for the cursor sync (the webhook is not durable truth; the
 
 ## Depends on
 
-- **Packages** (pinned by release tarball): `openvibe-contracts` v0.32.0, `openvibe-publishing`
-  v0.2.1 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.5.0 (chrome, app icon,
+- **Packages** (pinned by release tarball): `openvibe-contracts` v0.33.0, `openvibe-publishing`
+  v0.2.1 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.5.1 (chrome, app icon,
   footer, legal, release, metrics, ready), `openvibe-sdk` v0.5.0 (events outbox and inbox, webhook
   signatures v2, service tokens).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
