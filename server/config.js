@@ -45,7 +45,7 @@ function load(env = process.env) {
         formSecret: env.TRADE_FORM_SECRET || '',
 
         // Editors: Network subjects (usr_…) who may create instruments, write context and review
-        // AI drafts. Network admins are editors too.
+        // AI drafts (a product role). Staff with staff.editorial.manage are editors too.
         editors: list(env.TRADE_EDITORS),
 
         // OpenVibe.Sources: the trade category (filings, market data feeds). Read with a service

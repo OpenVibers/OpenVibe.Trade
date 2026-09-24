@@ -6,7 +6,7 @@
  *   { kind: 'anonymous', subject: null, editor: false }
  *   { kind: 'user', subject: 'usr_…'|null, editor, user, token }
  *       A browser with the Network user JWT (ov_token cookie or Bearer). The subject comes from the
- *       token's subject_id claim. Editors: role admin, or a subject in TRADE_EDITORS.
+ *       token's subject_id claim. Editors: staff with staff.editorial.manage (the contracts staff map), or a subject in TRADE_EDITORS.
  *       X-OV-* headers are ignored for browsers.
  *   { kind: 'service', service: 'svc:ai', claims, subject: 'usr_…'|null, origin: 'user'|'ai' }
  *       A first-party service with a Network client-credentials token for audience openvibe.trade.
@@ -23,7 +23,7 @@ const contracts = require('openvibe-contracts');
 const { extractToken, claimsToUser, decodeJwtPayload } = require('./sso');
 const { checkCapability } = require('./capabilities');
 
-const { ids, serviceAuth, http } = contracts;
+const { ids, serviceAuth, http, staff: staffMap } = contracts;
 const PRINCIPAL_SUB = /^(svc|app|mod):/;
 const AUDIENCE = 'openvibe.trade';
 
@@ -69,7 +69,7 @@ function createViewerResolver({ auth, config }) {
         const claims = await auth.verify(token);
         if (!claims || (typeof claims.sub === 'string' && PRINCIPAL_SUB.test(claims.sub))) return null;
         const subject = ids.isSubjectId('user', claims.subject_id) ? claims.subject_id : null;
-        const editor = claims.role === 'admin' || Boolean(subject && editors.has(subject));
+        const editor = staffMap.can(claims, 'staff.editorial.manage') || Boolean(subject && editors.has(subject));
         return { kind: 'user', subject, editor, origin: 'user', user: claimsToUser(claims), token };
     }
 
