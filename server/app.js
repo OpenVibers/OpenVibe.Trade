@@ -95,7 +95,7 @@ function createApp(opts = {}) {
         contentSecurityPolicy: {
             directives: {
                 defaultSrc: ["'self'"],
-                // The shared chrome (theme-loader, navbar) comes from the Network; the inline init is ours.
+                // The OpenVibe Frame (theme-loader, navbar, footer) comes from the Network; the inline init is ours.
                 scriptSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network'],
                 styleSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network', 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
                 fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
