@@ -13,6 +13,7 @@
  * A lower-case symbol or a ticker alias answers 301 to the canonical /i/:SYMBOL.
  */
 const express = require('express');
+const ovServe = require('openvibe-shared/serve');
 const frame = require('openvibe-shared/frame');
 const seo = require('openvibe-publishing/seo');
 const { paginate } = require('openvibe-publishing/ssr');
@@ -27,7 +28,7 @@ function createPages(ctx) {
     // What shipped on OpenVibe.Trade: the shared update log every OpenVibe site has.
     define(router, 'get', '/updates', 'showUpdates', (req, res) => common.page(req, res, {
         title: 'What shipped on OpenVibe.Trade', canonical: urls.abs('/updates'), decision: listing('/updates'),
-        body: frame.updatesBody({ service: 'trade', siteName: 'OpenVibe.Trade' }) + frame.shippedScript(),
+        body: frame.updatesBody({ service: 'trade', siteName: 'OpenVibe.Trade' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>`,
     }));
     define(router, 'get', '/', 'showHome', (req, res) => {
         const pageNo = Math.max(parseInt(req.query.page, 10) || 1, 1);
