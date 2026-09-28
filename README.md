@@ -194,12 +194,24 @@ webhook, as a wake-up for the cursor sync (the webhook is not durable truth; the
 3. The revision is an AI-generated **draft**: labelled, noindex, not shown to readers until a person
    on the editor list approves it at `/editor/i/:symbol`.
 
+## Capabilities
+
+Implemented here (the service manifest's `capabilities`, audience `openvibe.trade`, one per route; the
+route table is under [API](#api-apiv1-problemjson-errors)): `trade.instrument.resolve`,
+`trade.instrument.manage`, `trade.observation.write`, `trade.context.read`, `trade.context.propose`,
+`trade.watchlist.read`, `.create`, `.update`, `.delete`, and `trade.alert.read`, `.create`, `.delete`.
+None of them moves, holds or orders anything (ADR-025; `test/route-inventory.test.js`).
+
+Called elsewhere, as the service principal `trade`: `events.event.publish` (Events) and
+`sources.item.read` and `sources.source.read` (Sources). The list with audiences, and the grants other
+services need to call Trade, is under [Grants the Network must hold](#grants-the-network-must-hold).
+
 ## Depends on
 
-- **Packages** (pinned by release tarball): `openvibe-contracts` v0.33.0, `openvibe-publishing`
-  v0.2.1 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.5.1 (chrome, app icon,
-  footer, legal, release, metrics, ready), `openvibe-sdk` v0.5.0 (events outbox and inbox, webhook
-  signatures v2, service tokens).
+- **Packages** (pinned by release tarball): `openvibe-contracts` v0.49.0, `openvibe-publishing`
+  v0.4.0 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.22.0 (chrome, app icon,
+  footer, legal, release, metrics, ready), `openvibe-sdk` v0.12.0 (events outbox and inbox, webhook
+  signatures v2, service tokens, per-actor limits).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
   JWKS, client-credentials tokens.
 - **OpenVibe.Sources:** `sources.item.read` and `sources.source.read` (category `trade`).
@@ -261,6 +273,8 @@ The launch release removes `openvibe.trade` from `OpenVibe.Sites/sites.json`, sw
 registry, atomically. A placeholder never counts as an implemented service.
 
 ## Security and threat review
+
+Reporting a vulnerability: [SECURITY.md](SECURITY.md).
 
 - **Scope (ADR-025):** nothing moves or holds value. The route-inventory test is in CI; context that
   reads as advice is refused; the disclaimer is on every page.
@@ -325,6 +339,15 @@ fnm exec --using=22.22.1 npm run dev       # http://localhost:4860 (set OV_OAUTH
 ```
 
 ## Deploy (for the lead)
+
+Production deploys with `sudo ovhost deploy trade` on the host (strategy `git-checkout`: fetch,
+fast-forward `/opt/openvibe.trade`, install on a lockfile change, restart, wait for `/api/ready`).
+The unit is `openvibe-trade.service` on `127.0.0.1:4860`, the env file `/etc/openvibe/trade.env`.
+Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
+restart; afterwards `sudo ovhost rollback trade --to <sha>`. Nothing blocks a rollback: the schema
+code only adds tables and columns.
+
+First install (done once; kept for a rebuild):
 
 1. **Code and config:** code at `/opt/openvibe.trade`, `npm ci --omit=dev` on Node 22.
    Create `/etc/openvibe/trade.env` (0600) from `.env.example` with `OV_OAUTH_CLIENT_SECRET`,
