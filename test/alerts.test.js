@@ -11,10 +11,10 @@ const MIN = 60e3;
 
 (async () => {
     const t = await boot();
-    const acme = t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567' });
+    const acme = await t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567' });
     const iso = t.iso;
-    const obs = (value, minutes, ref) => t.observe(acme, { metric: 'price.close', value, source_ref: ref, observed_at: iso(t.T0 + minutes * MIN), retrieved_at: iso(t.T0 + minutes * MIN) });
-    const deliveries = () => t.ctx.store.db.prepare('SELECT * FROM trade_alert_deliveries ORDER BY created_at, id').all();
+    const obs = async (value, minutes, ref) => await t.observe(acme, { metric: 'price.close', value, source_ref: ref, observed_at: iso(t.T0 + minutes * MIN), retrieved_at: iso(t.T0 + minutes * MIN) });
+    const deliveries = async () => await t.ctx.store.db.prepare('SELECT * FROM trade_alert_deliveries ORDER BY created_at, id').all();
     let ruleId;
 
     await check('alice creates a threshold rule through the API (for herself only)', async () => {
@@ -26,14 +26,14 @@ const MIN = 60e3;
     });
 
     await check('an observation crossing the threshold delivers exactly once, with one event', async () => {
-        obs('99.50', 1, 'o1');
-        assert.strictEqual(deliveries().length, 0, 'below: nothing');
-        const { observation } = obs('101.00', 2, 'o2');
-        const d = deliveries();
+        await obs('99.50', 1, 'o1');
+        assert.strictEqual((await deliveries()).length, 0, 'below: nothing');
+        const { observation } = await obs('101.00', 2, 'o2');
+        const d = await deliveries();
         assert.strictEqual(d.length, 1);
         assert.strictEqual(d[0].trigger_kind, 'observation');
         assert.strictEqual(d[0].trigger_id, observation.id);
-        const ev = t.events('trade.alert.triggered');
+        const ev = await t.events('trade.alert.triggered');
         assert.strictEqual(ev.length, 1);
         assert.strictEqual(ev[0].visibility, 'subject');
         assert.deepStrictEqual(ev[0].subject, { type: 'user', id: t.alice.subject });
@@ -44,42 +44,42 @@ const MIN = 60e3;
     });
 
     await check('replaying the same observation (same source reference) delivers nothing new', async () => {
-        const r = obs('101.00', 2, 'o2');
+        const r = await obs('101.00', 2, 'o2');
         assert.strictEqual(r.created, false);
         const api = await t.get('/api/v1/observations', { as: t.network.serviceToken('feed', ['trade.observation.write']), json: { symbol: 'ACME', metric: 'price.close', value: '101.00', unit: 'USD', currency: 'USD', source_key: 'test-feed', source_ref: 'o2', observed_at: iso(t.T0 + 2 * MIN), retrieved_at: iso(t.T0 + 2 * MIN) } });
         assert.strictEqual(api.status, 200);
-        assert.strictEqual(deliveries().length, 1);
-        assert.strictEqual(t.events('trade.alert.triggered').length, 1);
+        assert.strictEqual((await deliveries()).length, 1);
+        assert.strictEqual((await t.events('trade.alert.triggered')).length, 1);
     });
 
     await check('re-running evaluation for the same observation cannot deliver twice (UNIQUE rule × trigger)', async () => {
-        const o = t.ctx.store.db.prepare("SELECT * FROM trade_market_observations WHERE source_ref = 'o2'").get();
-        t.ctx.store.db.prepare('UPDATE trade_alert_rules SET armed = 1, last_observed_at = NULL WHERE id = ?').run(ruleId);
-        t.ctx.store.tx(() => t.ctx.alerts.onObservation(o, acme));
-        t.ctx.store.tx(() => t.ctx.alerts.onObservation(o, acme));
-        assert.strictEqual(deliveries().length, 1);
-        assert.strictEqual(t.events('trade.alert.triggered').length, 1);
+        const o = await t.ctx.store.db.prepare("SELECT * FROM trade_market_observations WHERE source_ref = 'o2'").get();
+        await t.ctx.store.db.prepare('UPDATE trade_alert_rules SET armed = 1, last_observed_at = NULL WHERE id = ?').run(ruleId);
+        await t.ctx.store.tx(async () => await t.ctx.alerts.onObservation(o, acme));
+        await t.ctx.store.tx(async () => await t.ctx.alerts.onObservation(o, acme));
+        assert.strictEqual((await deliveries()).length, 1);
+        assert.strictEqual((await t.events('trade.alert.triggered')).length, 1);
     });
 
     await check('staying above does not repeat; dropping below re-arms; crossing again delivers once more', async () => {
-        obs('102.00', 3, 'o3');
-        assert.strictEqual(deliveries().length, 1, 'still above: no repeat');
-        obs('98.00', 4, 'o4');
-        assert.strictEqual(deliveries().length, 1);
-        obs('100.50', 5, 'o5');
-        assert.strictEqual(deliveries().length, 2);
-        assert.strictEqual(t.events('trade.alert.triggered').length, 2);
+        await obs('102.00', 3, 'o3');
+        assert.strictEqual((await deliveries()).length, 1, 'still above: no repeat');
+        await obs('98.00', 4, 'o4');
+        assert.strictEqual((await deliveries()).length, 1);
+        await obs('100.50', 5, 'o5');
+        assert.strictEqual((await deliveries()).length, 2);
+        assert.strictEqual((await t.events('trade.alert.triggered')).length, 2);
     });
 
     await check('a late observation (older than the last one evaluated) never fires', async () => {
-        obs('97.00', 6, 'o6');   // re-arms
-        obs('150.00', 1.5, 'late');
-        assert.strictEqual(deliveries().length, 2);
+        await obs('97.00', 6, 'o6');   // re-arms
+        await obs('150.00', 1.5, 'late');
+        assert.strictEqual((await deliveries()).length, 2);
     });
 
     await check('unit or currency mismatch never fires (no conversion)', async () => {
-        t.observe(acme, { metric: 'price.close', value: '500', unit: 'EUR', currency: 'EUR', source_ref: 'eur', observed_at: iso(t.T0 + 7 * MIN), retrieved_at: iso(t.T0 + 7 * MIN) });
-        assert.strictEqual(deliveries().length, 2);
+        await t.observe(acme, { metric: 'price.close', value: '500', unit: 'EUR', currency: 'EUR', source_ref: 'eur', observed_at: iso(t.T0 + 7 * MIN), retrieved_at: iso(t.T0 + 7 * MIN) });
+        assert.strictEqual((await deliveries()).length, 2);
     });
 
     await check('document rules: new_document and filing_type fire once per document; revisions of the item never re-fire', async () => {
@@ -90,17 +90,17 @@ const MIN = 60e3;
         const url = 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000001/0001234567-26-000001-index.htm';
         const item = t.sources.putItem({ canonical_url: url, title: 'ACME CORP', summary: '10-Q', published_at: iso(t.T0), retrieved_at: iso(t.clock.now()) });
         await t.ctx.sync.run();
-        const bobs = () => deliveries().filter((d) => d.owner_subject === t.bob.subject);
-        assert.strictEqual(bobs().length, 1, 'new_document fired, filing_type(8-K) did not for a 10-Q');
+        const bobs = async () => (await deliveries()).filter((d) => d.owner_subject === t.bob.subject);
+        assert.strictEqual((await bobs()).length, 1, 'new_document fired, filing_type(8-K) did not for a 10-Q');
         t.sources.putItem({ id: item.id, canonical_url: url, title: 'ACME CORP (amended title)', summary: '10-Q', published_at: iso(t.T0), retrieved_at: iso(t.clock.now()) });
         await t.ctx.sync.run();
-        t.ctx.store.db.prepare("UPDATE trade_sync_state SET cursor = 0 WHERE name = 'sources.trade'").run();
+        await t.ctx.store.db.prepare("UPDATE trade_sync_state SET cursor = 0 WHERE name = 'sources.trade'").run();
         await t.ctx.sync.run();
-        assert.strictEqual(bobs().length, 1, 'item revision and page replay: no second delivery');
+        assert.strictEqual((await bobs()).length, 1, 'item revision and page replay: no second delivery');
         assert.strictEqual((await t.get('/i/ACME.json')).json().documents[0].title, 'ACME CORP (amended title)');
         t.sources.putItem({ canonical_url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000002/0001234567-26-000002-index.htm', title: 'ACME CORP', summary: '8-K', published_at: iso(t.T0), retrieved_at: iso(t.clock.now()) });
         await t.ctx.sync.run();
-        assert.strictEqual(bobs().length, 3, 'an 8-K: new_document + filing_type');
+        assert.strictEqual((await bobs()).length, 3, 'an 8-K: new_document + filing_type');
     });
 
     await check('rules and deliveries are private: someone else sees none and cannot delete them', async () => {

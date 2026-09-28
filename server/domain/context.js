@@ -38,7 +38,7 @@ function createContext({ store, config, ctx }) {
     }
 
     /** Validate cited refs: they must be this instrument's documents (not removed) or observations. */
-    function resolveCites(instrument, cites) {
+    async function resolveCites(instrument, cites) {
         if (cites == null) return [];
         if (!Array.isArray(cites) || cites.length > 50) throw invalid('cites must be a list of at most 50 { kind, id }');
         const seen = new Set();
@@ -47,10 +47,10 @@ function createContext({ store, config, ctx }) {
             const kind = c && c.kind;
             const id = c && String(c.id || '');
             if (kind === 'document') {
-                const d = ctx.documents.get(id);
+                const d = await ctx.documents.get(id);
                 if (!d || d.instrument_id !== instrument.id || d.removed_at) throw invalid(`document ${id} is not a current document of ${instrument.symbol}`, 'context.bad_citation');
             } else if (kind === 'observation') {
-                const o = ctx.observations.get(id);
+                const o = await ctx.observations.get(id);
                 if (!o || o.instrument_id !== instrument.id) throw invalid(`observation ${id} is not an observation of ${instrument.symbol}`, 'context.bad_citation');
             } else {
                 throw invalid('each citation is { kind: "document" | "observation", id }', 'context.bad_citation');
@@ -61,12 +61,12 @@ function createContext({ store, config, ctx }) {
         return out;
     }
 
-    function asOf(cites) {
+    async function asOf(cites) {
         let t = null;
         for (const c of cites) {
             let v = null;
-            if (c.kind === 'observation') { const o = ctx.observations.get(c.id); v = o && o.observed_at; }
-            else { const d = ctx.documents.get(c.id); v = d && (d.published_at || d.retrieved_at); }
+            if (c.kind === 'observation') { const o = await ctx.observations.get(c.id); v = o && o.observed_at; }
+            else { const d = await ctx.documents.get(c.id); v = d && (d.published_at || d.retrieved_at); }
             if (v != null && (t == null || v > t)) t = v;
         }
         return iso(t);
@@ -78,15 +78,15 @@ function createContext({ store, config, ctx }) {
         return false;
     }
 
-    function create(instrument, { content, fields, rec, author, message, expectedRevision }) {
-        const head = store.revisions.headNumber(instrument.id);
+    async function create(instrument, { content, fields, rec, author, message, expectedRevision }) {
+        const head = await store.revisions.headNumber(instrument.id);
         const expected = expectedRevision == null ? head : Number(expectedRevision);
         if (!Number.isInteger(expected) || expected < 0) throw invalid('expected_revision must be a revision number');
-        return store.revisions.create({ entityId: instrument.id, expectedRevision: expected, content, fields, meta: { authorship: rec }, author, message, allowUnchanged: true }).revision;
+        return (await store.revisions.create({ entityId: instrument.id, expectedRevision: expected, content, fields, meta: { authorship: rec }, author, message, allowUnchanged: true })).revision;
     }
 
     /** AI output → markdown. Citations are indices into input_sources (what the AI was given). */
-    function fromAiOutput(instrument, body) {
+    async function fromAiOutput(instrument, body) {
         const wf = body.workflow || {};
         if (wf.id !== WORKFLOW) throw invalid(`AI context must come from the ${WORKFLOW} workflow`, 'context.wrong_workflow');
         const runId = wf.run_id || wf.runId;
@@ -131,17 +131,17 @@ function createContext({ store, config, ctx }) {
             stubProvider: body.stub_provider === true,
             source: { label: `${instrument.symbol} documents and observations on OpenVibe.Trade` },
         });
-        resolveCites(instrument, refs);   // every source the model was given must exist
-        return { content: lines.join('\n'), cites: resolveCites(instrument, all), rec, gaps };
+        await resolveCites(instrument, refs);   // every source the model was given must exist
+        return { content: lines.join('\n'), cites: await resolveCites(instrument, all), rec, gaps };
     }
 
     const api = {
         WORKFLOW,
         isEditorSubject,
 
-        head: (instrument) => store.revisions.head(instrument.id),
-        revision: (instrument, n) => store.revisions.get(instrument.id, n),
-        revisions: (instrument, opts) => store.revisions.list(instrument.id, opts),
+        head: async (instrument) => await store.revisions.head(instrument.id),
+        revision: async (instrument, n) => await store.revisions.get(instrument.id, n),
+        revisions: async (instrument, opts) => await store.revisions.list(instrument.id, opts),
 
         /**
          * A new context revision. Editors: { body, cites?, expected_revision?, publish? }.
@@ -149,13 +149,13 @@ function createContext({ store, config, ctx }) {
          * input_sources: [{ source_type, source_id }], output: { summary, observations, gaps, citations },
          * stub_provider? } — always a draft.
          */
-        propose(viewer, instrument, body = {}) {
+        async propose(viewer, instrument, body = {}) {
             if (!instrument || instrument.status !== 'active') throw new ApiError(404, 'instrument.not_found', 'No such active instrument');
             if (viewer.kind === 'service' && viewer.origin === 'ai') {
-                const { content, cites, rec, gaps } = fromAiOutput(instrument, body);
+                const { content, cites, rec, gaps } = await fromAiOutput(instrument, body);
                 refuseAdvice(content);
-                const fields = { as_of: asOf(cites), cites, origin: 'ai', gaps };
-                const revision = store.tx(() => create(instrument, { content, fields, rec, author: viewer.service, message: 'AI draft (needs a person\'s review)' }));
+                const fields = { as_of: await asOf(cites), cites, origin: 'ai', gaps };
+                const revision = await store.tx(async () => await create(instrument, { content, fields, rec, author: viewer.service, message: 'AI draft (needs a person\'s review)' }));
                 return { revision, published: false };
             }
             if (!isEditorSubject(viewer)) throw new ApiError(403, 'context.forbidden', 'Only Trade editors write context');
@@ -163,13 +163,13 @@ function createContext({ store, config, ctx }) {
             if (!text) throw invalid('body is required');
             if (text.length > MAX_BODY) throw invalid(`body is longer than ${MAX_BODY} characters`);
             refuseAdvice(text);
-            const cites = resolveCites(instrument, body.cites);
+            const cites = await resolveCites(instrument, body.cites);
             const rec = authorship.record({ mode: 'human', authors: [viewer.subject] });
-            const fields = { as_of: asOf(cites), cites, origin: 'editor' };
-            return store.tx(() => {
-                const revision = create(instrument, { content: text, fields, rec, author: viewer.subject, message: body.message ? String(body.message).slice(0, 300) : null, expectedRevision: body.expected_revision });
+            const fields = { as_of: await asOf(cites), cites, origin: 'editor' };
+            return await store.tx(async () => {
+                const revision = await create(instrument, { content: text, fields, rec, author: viewer.subject, message: body.message ? String(body.message).slice(0, 300) : null, expectedRevision: body.expected_revision });
                 if (body.publish === true || body.publish === 'on' || body.publish === '1') {
-                    api.publish(instrument, revision.number);
+                    await api.publish(instrument, revision.number);
                     return { revision, published: true };
                 }
                 return { revision, published: false };
@@ -177,64 +177,64 @@ function createContext({ store, config, ctx }) {
         },
 
         /** A person's review. Approving an AI draft publishes it. */
-        review(viewer, instrument, number, { decision, note } = {}) {
+        async review(viewer, instrument, number, { decision, note } = {}) {
             if (viewer.kind !== 'user' || !viewer.editor || !viewer.subject) throw new ApiError(403, 'review.forbidden', 'Only a person on the editor list can review context');
-            const rev = store.revisions.get(instrument.id, Number(number));
+            const rev = await store.revisions.get(instrument.id, Number(number));
             if (!rev) throw new ApiError(404, 'revision.not_found', 'No such context revision');
-            return store.tx(() => {
-                const review = store.reviews.record({ entityId: instrument.id, revision: rev.number, reviewer: viewer.subject, decision, note });
+            return await store.tx(async () => {
+                const review = await store.reviews.record({ entityId: instrument.id, revision: rev.number, reviewer: viewer.subject, decision, note });
                 let published = false;
-                if (decision === 'approved') { api.publish(instrument, rev.number); published = true; }
+                if (decision === 'approved') { await api.publish(instrument, rev.number); published = true; }
                 return { review, published };
             });
         },
 
-        publish(instrument, number) {
-            const rev = store.revisions.get(instrument.id, Number(number));
+        async publish(instrument, number) {
+            const rev = await store.revisions.get(instrument.id, Number(number));
             if (!rev) throw new ApiError(404, 'revision.not_found', 'No such context revision');
             const rec = rev.meta.authorship;
-            const ok = authorship.canPublish(rec, store.reviews.latest(instrument.id, rev.number));
+            const ok = authorship.canPublish(rec, await store.reviews.latest(instrument.id, rev.number));
             if (!ok.ok) throw new ApiError(409, 'context.review_required', 'AI-generated context needs an approving review by a person before it is published');
-            return store.tx(() => {
-                setPublished.run(rev.number, store.now(), store.now(), instrument.id);
-                ctx.indexing.refresh(ctx.instruments.get(instrument.id));
+            return await store.tx(async () => {
+                await setPublished.run(rev.number, store.now(), store.now(), instrument.id);
+                await ctx.indexing.refresh(await ctx.instruments.get(instrument.id));
                 return rev;
             });
         },
 
-        retract(viewer, instrument) {
+        async retract(viewer, instrument) {
             if (!isEditorSubject(viewer)) throw new ApiError(403, 'context.forbidden', 'Only Trade editors retract context');
-            return store.tx(() => {
-                setPublished.run(null, null, store.now(), instrument.id);
-                ctx.indexing.refresh(ctx.instruments.get(instrument.id));
+            return await store.tx(async () => {
+                await setPublished.run(null, null, store.now(), instrument.id);
+                await ctx.indexing.refresh(await ctx.instruments.get(instrument.id));
                 return true;
             });
         },
 
         /** The published revision's view, or null. */
-        published(instrument) {
+        async published(instrument) {
             if (!instrument.context_published_revision) return null;
-            const rev = store.revisions.get(instrument.id, instrument.context_published_revision);
-            return rev ? api.view(instrument, rev) : null;
+            const rev = await store.revisions.get(instrument.id, instrument.context_published_revision);
+            return rev ? await api.view(instrument, rev) : null;
         },
 
         /** Revisions after the published one (drafts awaiting review or publication). */
-        pending(instrument) {
+        async pending(instrument) {
             const published = instrument.context_published_revision || 0;
-            return store.revisions.list(instrument.id, { limit: 20 }).filter((r) => r.number > published).map((r) => api.view(instrument, r));
+            return (await Promise.all((await store.revisions.list(instrument.id, { limit: 20 })).filter((r) => r.number > published).map(async (r) => await api.view(instrument, r))));
         },
 
-        view(instrument, rev) {
+        async view(instrument, rev) {
             const rec = rev.meta.authorship || null;
-            const review = store.reviews.latest(instrument.id, rev.number);
-            const cites = (rev.fields.cites || []).map((c) => {
+            const review = await store.reviews.latest(instrument.id, rev.number);
+            const cites = (await Promise.all((rev.fields.cites || []).map(async (c) => {
                 if (c.kind === 'observation') {
-                    const o = ctx.observations.get(c.id);
-                    return o ? { kind: c.kind, id: c.id, observation: ctx.observations.dto(o) } : { kind: c.kind, id: c.id, missing: true };
+                    const o = await ctx.observations.get(c.id);
+                    return o ? { kind: c.kind, id: c.id, observation: await ctx.observations.dto(o) } : { kind: c.kind, id: c.id, missing: true };
                 }
-                const d = ctx.documents.get(c.id);
+                const d = await ctx.documents.get(c.id);
                 return d && !d.removed_at ? { kind: c.kind, id: c.id, document: ctx.documents.dto(d) } : { kind: c.kind, id: c.id, missing: true };
-            });
+            })));
             return {
                 revision: rev.number,
                 published: instrument.context_published_revision === rev.number,
@@ -254,10 +254,10 @@ function createContext({ store, config, ctx }) {
         },
 
         /** The input OpenVibe.AI's trade.summarize_market_context expects, numbered sources included. */
-        input(instrument) {
+        async input(instrument) {
             const sources = [];
-            for (const o of ctx.observations.latest(instrument)) {
-                const dto = ctx.observations.dto(o);
+            for (const o of await ctx.observations.latest(instrument)) {
+                const dto = await ctx.observations.dto(o);
                 sources.push({
                     source_type: 'trade.observation', source_id: o.id, url: o.source_url || undefined,
                     title: `${o.metric} of ${instrument.symbol}`,
@@ -266,8 +266,8 @@ function createContext({ store, config, ctx }) {
                     provenance: { source_key: o.source_key, stale: dto.freshness.stale, stale_since: dto.freshness.stale_since },
                 });
             }
-            for (const d of ctx.documents.forInstrument(instrument, { limit: 20 })) {
-                const fresh = ctx.freshness.view(d.source_key);
+            for (const d of await ctx.documents.forInstrument(instrument, { limit: 20 })) {
+                const fresh = await ctx.freshness.view(d.source_key);
                 sources.push({
                     source_type: 'trade.document', source_id: d.id, url: d.url || undefined, title: d.title || undefined,
                     published_at: iso(d.published_at) || undefined, retrieved_at: iso(d.retrieved_at),
@@ -276,7 +276,7 @@ function createContext({ store, config, ctx }) {
                 });
             }
             const clean = sources.map((s) => JSON.parse(JSON.stringify(s)));
-            const windows = [...new Set(clean.map((s) => ctx.freshness.view(s.provenance.source_key).stale_after_sec))];
+            const windows = [...new Set((await Promise.all(clean.map(async (s) => (await ctx.freshness.view(s.provenance.source_key)).stale_after_sec))))];
             const hours = Math.max(1, Math.ceil((windows.length ? Math.min(...windows) : config.freshness.defaultStaleAfterSec) / 3600));
             return {
                 workflow: WORKFLOW,

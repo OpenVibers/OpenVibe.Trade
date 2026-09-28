@@ -24,7 +24,7 @@
  * Never limited: /api/health, /api/ready, /release.json, /release-metrics, /metrics, sign-in, the pages
  * and feeds people read, and the signed Events deliveries at /internal/events.
  */
-const { createActorLimiter, defaultActor } = require('openvibe-sdk/limits');
+const { createActorLimiter, createValkeyLimitStore, defaultActor } = require('openvibe-sdk/limits');
 
 const FIRST_PARTY = /^svc:/;
 
@@ -75,7 +75,7 @@ const BUDGETS = {
  * limits(name, own) middleware for one app, plus limits.reads(name) (the defaults on a counted
  * GET/HEAD) and limits.budget(name) (one of BUDGETS).
  */
-function createActorLimits({ config, now = () => Date.now(), registry = null, log = console }) {
+function createActorLimits({ config, now = () => Date.now(), registry = null, log = console, valkey = null }) {
     const refused = registry
         ? registry.counter({ name: 'trade_rate_limited_total', help: 'Requests refused 429 by a per-actor limit, by limit name and window', labelNames: ['limit', 'window'] })
         : null;
@@ -83,6 +83,8 @@ function createActorLimits({ config, now = () => Date.now(), registry = null, lo
         limits: { minute: config.actorLimits.minute, hour: config.actorLimits.hour },
         actor,
         now,
+        // Shared across processes on Valkey (ADR-035) when VALKEY_URL is set; in-process otherwise.
+        ...(valkey ? { store: createValkeyLimitStore(valkey) } : {}),
         onLimited(e) {
             // The actor is a subject id, a principal or an address, never a token.
             log.warn(`[Trade] limit ${e.name}: ${e.actor} refused, over ${e.limit} per ${e.window}`);

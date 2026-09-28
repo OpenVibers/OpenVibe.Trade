@@ -62,8 +62,8 @@ function createInstruments({ store }) {
         aliasesOf: db.prepare('SELECT kind, value, normalized, created_at FROM trade_instrument_aliases WHERE instrument_id = ? ORDER BY kind, normalized'),
         insert: db.prepare(`INSERT INTO trade_instruments (id, symbol, name, kind, exchange, cik, currency, status, created_by, created_at, updated_at)
                             VALUES (@id, @symbol, @name, @kind, @exchange, @cik, @currency, 'active', @by, @now, @now)`),
-        insertAlias: db.prepare(`INSERT OR IGNORE INTO trade_instrument_aliases (instrument_id, kind, value, normalized, added_by, created_at)
-                                 VALUES (?, ?, ?, ?, ?, ?)`),
+        insertAlias: db.prepare(`INSERT INTO trade_instrument_aliases (instrument_id, kind, value, normalized, added_by, created_at)
+                                 VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`),
         count: db.prepare("SELECT COUNT(*) AS n FROM trade_instruments WHERE status = 'active'"),
         page: db.prepare("SELECT * FROM trade_instruments WHERE status = 'active' ORDER BY symbol LIMIT ? OFFSET ?"),
         active: db.prepare("SELECT * FROM trade_instruments WHERE status = 'active' ORDER BY symbol"),
@@ -93,11 +93,13 @@ function createInstruments({ store }) {
         return out;
     }
 
-    function conflictGuard(fn) {
-        try { return fn(); } catch (err) {
-            if (err && /UNIQUE constraint failed/.test(err.message)) {
-                if (/trade_instruments\.symbol/.test(err.message)) throw new ApiError(409, 'instrument.symbol_taken', 'Another instrument has this symbol');
-                if (/trade_instruments\.cik/.test(err.message)) throw new ApiError(409, 'instrument.cik_taken', 'Another instrument has this CIK');
+    async function conflictGuard(fn) {
+        try { return await fn(); } catch (err) {
+            // PostgreSQL unique_violation (23505): err.table and err.detail ("Key (symbol)=(…) already exists.") name it.
+            if (err && err.code === '23505') {
+                const own = err.table === 'trade_instruments';
+                if (own && /\(symbol\)/.test(err.detail || '')) throw new ApiError(409, 'instrument.symbol_taken', 'Another instrument has this symbol');
+                if (own && /\(cik\)/.test(err.detail || '')) throw new ApiError(409, 'instrument.cik_taken', 'Another instrument has this CIK');
                 throw new ApiError(409, 'alias.taken', 'This ticker or CIK already names another instrument');
             }
             throw err;
@@ -108,34 +110,34 @@ function createInstruments({ store }) {
         KINDS,
         normSymbol, normCik, normName,
 
-        get: (id) => q.byId.get(id) || null,
-        bySymbol: (symbol) => { const s = normSymbol(symbol); return s ? q.bySymbol.get(s) || null : null; },
-        aliases: (instrument) => q.aliasesOf.all(instrument.id),
-        active: () => q.active.all(),
-        page({ limit = 50, offset = 0 } = {}) {
-            return { total: q.count.get().n, instruments: q.page.all(limit, offset) };
+        get: async (id) => await q.byId.get(id) || null,
+        bySymbol: async (symbol) => { const s = normSymbol(symbol); return s ? await q.bySymbol.get(s) || null : null; },
+        aliases: async (instrument) => await q.aliasesOf.all(instrument.id),
+        active: async () => await q.active.all(),
+        async page({ limit = 50, offset = 0 } = {}) {
+            return { total: (await q.count.get()).n, instruments: await q.page.all(limit, offset) };
         },
 
         /** input: { symbol, name, kind?, exchange?, cik?, currency? } → the new row. Aliases for the symbol, CIK and name are added. */
-        create(input, by) {
+        async create(input, by) {
             const symbol = normSymbol(input.symbol);
             if (!symbol) throw invalid('symbol must be 1–16 characters of A–Z, 0–9, "." or "-"');
             const f = fields(input);
             const id = newId('ins', store.now());
-            return conflictGuard(() => store.tx(() => {
+            return await conflictGuard(async () => await store.tx(async () => {
                 // A ticker alias of another instrument must not be shadowed by a new symbol.
-                const holder = q.alias.all('ticker', symbol).find((i) => i.symbol !== symbol);
+                const holder = (await q.alias.all('ticker', symbol)).find((i) => i.symbol !== symbol);
                 if (holder) throw new ApiError(409, 'alias.taken', `${symbol} is already an alias of ${holder.symbol}`);
-                q.insert.run({ id, symbol, ...f, by: by || null, now: store.now() });
-                q.insertAlias.run(id, 'ticker', symbol, symbol, by || null, store.now());
-                if (f.cik) q.insertAlias.run(id, 'cik', f.cik, f.cik, by || null, store.now());
+                await q.insert.run({ id, symbol, ...f, by: by || null, now: store.now() });
+                await q.insertAlias.run(id, 'ticker', symbol, symbol, by || null, store.now());
+                if (f.cik) await q.insertAlias.run(id, 'cik', f.cik, f.cik, by || null, store.now());
                 const n = normName(f.name);
-                if (n) q.insertAlias.run(id, 'name', f.name, n, by || null, store.now());
-                return q.byId.get(id);
+                if (n) await q.insertAlias.run(id, 'name', f.name, n, by || null, store.now());
+                return await q.byId.get(id);
             }));
         },
 
-        update(instrument, input) {
+        async update(instrument, input) {
             const f = fields(input, { partial: true });
             if (input.status !== undefined) {
                 if (!['active', 'archived'].includes(input.status)) throw invalid('status must be active or archived');
@@ -143,28 +145,28 @@ function createInstruments({ store }) {
             }
             const keys = Object.keys(f);
             if (!keys.length) return instrument;
-            return conflictGuard(() => store.tx(() => {
-                db.prepare(`UPDATE trade_instruments SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @now WHERE id = @id`).run({ ...f, now: store.now(), id: instrument.id });
-                if (f.cik) q.insertAlias.run(instrument.id, 'cik', f.cik, f.cik, null, store.now());
-                if (f.name) { const n = normName(f.name); if (n) q.insertAlias.run(instrument.id, 'name', f.name, n, null, store.now()); }
-                return q.byId.get(instrument.id);
+            return await conflictGuard(async () => await store.tx(async () => {
+                await db.prepare(`UPDATE trade_instruments SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @now WHERE id = @id`).run({ ...f, now: store.now(), id: instrument.id });
+                if (f.cik) await q.insertAlias.run(instrument.id, 'cik', f.cik, f.cik, null, store.now());
+                if (f.name) { const n = normName(f.name); if (n) await q.insertAlias.run(instrument.id, 'name', f.name, n, null, store.now()); }
+                return await q.byId.get(instrument.id);
             }));
         },
 
-        addAlias(instrument, kind, value, by) {
+        async addAlias(instrument, kind, value, by) {
             if (!NORMALIZE[kind]) throw invalid('alias kind must be ticker, cik or name');
             const raw = str(value, 200, 'alias', { required: true });
             const n = NORMALIZE[kind](raw);
             if (!n) throw invalid(`not a valid ${kind}`);
             if (kind === 'ticker') {
-                const owner = q.bySymbol.get(n);
+                const owner = await q.bySymbol.get(n);
                 if (owner && owner.id !== instrument.id) throw new ApiError(409, 'alias.taken', `${n} is the symbol of ${owner.symbol}`);
             }
             if (kind === 'cik') {
-                const owner = q.byCik.get(n);
+                const owner = await q.byCik.get(n);
                 if (owner && owner.id !== instrument.id) throw new ApiError(409, 'alias.taken', `${n} is the CIK of ${owner.symbol}`);
             }
-            conflictGuard(() => q.insertAlias.run(instrument.id, kind, raw, n, by || null, store.now()));
+            await conflictGuard(async () => await q.insertAlias.run(instrument.id, kind, raw, n, by || null, store.now()));
             return { kind, value: raw, normalized: n };
         },
 
@@ -172,7 +174,7 @@ function createInstruments({ store }) {
          * → { query, status: 'resolved'|'ambiguous'|'not_found', match: { kind, value } | null,
          *     instrument | null, candidates: [] }
          */
-        resolve(query, { kind = null } = {}) {
+        async resolve(query, { kind = null } = {}) {
             const raw = String(query == null ? '' : query).trim().slice(0, 200);
             const out = (status, match, instrument, candidates = []) => ({ query: raw, status, match, instrument: instrument || null, candidates });
             if (!raw) return out('not_found', null, null);
@@ -181,23 +183,23 @@ function createInstruments({ store }) {
             if (!kind || kind === 'cik') {
                 const cik = /^(CIK)?\d{1,10}$/i.test(raw) ? normCik(raw) : null;
                 if (cik) {
-                    const hit = q.byCik.get(cik) || q.alias.all('cik', cik)[0];
+                    const hit = await q.byCik.get(cik) || (await q.alias.all('cik', cik))[0];
                     if (hit) return out('resolved', { kind: 'cik', value: cik }, hit);
                 }
             }
             if (!kind || kind === 'ticker') {
                 const sym = normSymbol(raw);
                 if (sym) {
-                    const hit = q.bySymbol.get(sym);
+                    const hit = await q.bySymbol.get(sym);
                     if (hit) return out('resolved', { kind: 'symbol', value: sym }, hit);
-                    const alias = q.alias.all('ticker', sym)[0];
+                    const alias = (await q.alias.all('ticker', sym))[0];
                     if (alias) return out('resolved', { kind: 'ticker', value: sym }, alias);
                 }
             }
             if (!kind || kind === 'name') {
                 const n = normName(raw);
                 if (n) {
-                    const hits = q.alias.all('name', n);
+                    const hits = await q.alias.all('name', n);
                     if (hits.length === 1) return out('resolved', { kind: 'name', value: n }, hits[0]);
                     if (hits.length > 1) return out('ambiguous', { kind: 'name', value: n }, null, hits);
                 }

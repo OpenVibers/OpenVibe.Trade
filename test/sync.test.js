@@ -12,9 +12,9 @@ const { mapItem } = require('../server/domain/mapping');
 
 (async () => {
     const t = await boot();
-    const apple = t.instrument({ symbol: 'AAPL', name: 'Apple Inc.', cik: '320193', exchange: 'NASDAQ' });
-    t.instrument({ symbol: 'ACME', name: 'Acme Corp' });
-    t.instrument({ symbol: 'ACMX', name: 'ACME CORPORATION' });   // normalises to the same name as ACME Corp
+    const apple = await t.instrument({ symbol: 'AAPL', name: 'Apple Inc.', cik: '320193', exchange: 'NASDAQ' });
+    await t.instrument({ symbol: 'ACME', name: 'Acme Corp' });
+    await t.instrument({ symbol: 'ACMX', name: 'ACME CORPORATION' });   // normalises to the same name as ACME Corp
     const ret = t.iso(t.T0 - 5 * 60e3);
     t.sources.setSource('sec-xbrl-filings', { name: 'SEC EDGAR: latest XBRL filings', lastSuccessAt: ret, staleAfterSec: 2700 });
 
@@ -54,50 +54,50 @@ const { mapItem } = require('../server/domain/mapping');
         assert.strictEqual(d.retrieved_at, ret);
         assert.strictEqual(d.source.item_id, filing.id);
         assert.deepStrictEqual(json.observations.map((o) => [o.metric, o.value, o.observed_at]), [['price.close', '231.40', '2026-09-21T20:00:00.000Z']]);
-        assert.strictEqual(t.ctx.sync.state().cursor, 4);
+        assert.strictEqual((await t.ctx.sync.state()).cursor, 4);
         const src = json.sources.find((s) => s.key === 'sec-xbrl-filings');
         assert.strictEqual(src.name, 'SEC EDGAR: latest XBRL filings');
         assert.strictEqual(src.stale_after_sec, 2700);
     });
 
     await check('replaying the same Sources pages (cursor reset) creates nothing new', async () => {
-        const docs = t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_source_documents').get().n;
-        const obs = t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations').get().n;
-        const evts = t.events().length;
-        t.ctx.store.db.prepare("UPDATE trade_sync_state SET cursor = 0 WHERE name = 'sources.trade'").run();
+        const docs = (await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_source_documents').get()).n;
+        const obs = (await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations').get()).n;
+        const evts = (await t.events()).length;
+        await t.ctx.store.db.prepare("UPDATE trade_sync_state SET cursor = 0 WHERE name = 'sources.trade'").run();
         const r = await t.ctx.sync.run();
         assert.strictEqual(r.ok, true);
-        assert.strictEqual(t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_source_documents').get().n, docs);
-        assert.strictEqual(t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations').get().n, obs);
-        assert.strictEqual(t.events('trade.observation.created').length, 1);
-        assert.strictEqual(t.events().length, evts, 'no new events at all');
+        assert.strictEqual((await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_source_documents').get()).n, docs);
+        assert.strictEqual((await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations').get()).n, obs);
+        assert.strictEqual((await t.events('trade.observation.created')).length, 1);
+        assert.strictEqual((await t.events()).length, evts, 'no new events at all');
     });
 
     await check('a removed Sources item hides the document (the row stays as the record)', async () => {
         t.sources.remove(filing.id, { at: t.iso(t.T0), reason: 'takedown request' });
         await t.ctx.sync.run();
         assert.strictEqual((await t.get('/i/AAPL.json')).json().documents.length, 0);
-        const row = t.ctx.store.db.prepare('SELECT * FROM trade_source_documents WHERE source_item_id = ?').get(filing.id);
+        const row = await t.ctx.store.db.prepare('SELECT * FROM trade_source_documents WHERE source_item_id = ?').get(filing.id);
         assert.strictEqual(row.removed_reason, 'takedown request');
         const feed = await t.get('/i/AAPL/documents.xml');
         assert.ok(!feed.text.includes('10-Q'), 'gone from the feed too');
     });
 
     await check('resolution is deterministic: CIK, then ticker, then exact normalised name; several names → ambiguous', async () => {
-        const r = (q, k) => t.ctx.instruments.resolve(q, k ? { kind: k } : {});
-        assert.strictEqual(r('320193').instrument.symbol, 'AAPL');
-        assert.strictEqual(r('CIK0000320193').match.kind, 'cik');
-        assert.strictEqual(r('aapl').instrument.symbol, 'AAPL');
-        assert.strictEqual(r('Apple Inc').instrument.symbol, 'AAPL');
-        assert.strictEqual(r('APPLE, INC.').instrument.symbol, 'AAPL');
-        const amb = r('Acme Corporation');
+        const r = async (q, k) => await t.ctx.instruments.resolve(q, k ? { kind: k } : {});
+        assert.strictEqual((await r('320193')).instrument.symbol, 'AAPL');
+        assert.strictEqual((await r('CIK0000320193')).match.kind, 'cik');
+        assert.strictEqual((await r('aapl')).instrument.symbol, 'AAPL');
+        assert.strictEqual((await r('Apple Inc')).instrument.symbol, 'AAPL');
+        assert.strictEqual((await r('APPLE, INC.')).instrument.symbol, 'AAPL');
+        const amb = await r('Acme Corporation');
         assert.strictEqual(amb.status, 'ambiguous');
         assert.deepStrictEqual(amb.candidates.map((i) => i.symbol), ['ACME', 'ACMX']);
         assert.strictEqual(amb.instrument, null, 'none is chosen');
-        assert.strictEqual(r('Appl').status, 'not_found', 'no prefix or fuzzy matching');
-        t.ctx.instruments.addAlias(apple, 'ticker', 'APC', t.editor.subject);
-        assert.strictEqual(r('APC').match.kind, 'ticker');
-        for (let i = 0; i < 3; i++) assert.deepStrictEqual(r('Acme Corporation').candidates.map((x) => x.id), amb.candidates.map((x) => x.id));
+        assert.strictEqual((await r('Appl')).status, 'not_found', 'no prefix or fuzzy matching');
+        await t.ctx.instruments.addAlias(apple, 'ticker', 'APC', t.editor.subject);
+        assert.strictEqual((await r('APC')).match.kind, 'ticker');
+        for (let i = 0; i < 3; i++) assert.deepStrictEqual((await r('Acme Corporation')).candidates.map((x) => x.id), amb.candidates.map((x) => x.id));
         const page = await t.get('/i/APC');
         assert.strictEqual(page.status, 301);
         assert.strictEqual(page.headers.get('location'), '/i/AAPL');
@@ -110,8 +110,8 @@ const { mapItem } = require('../server/domain/mapping');
     await check('a ticker or CIK names one instrument: collisions are 409', async () => {
         const ed = t.editor;
         assert.strictEqual((await t.get('/api/v1/instruments', { as: { ...ed, role: 'user' }, json: { symbol: 'APC', name: 'Other' } })).status, 409);
-        const acme = t.ctx.instruments.bySymbol('ACME');
-        assert.throws(() => t.ctx.instruments.addAlias(acme, 'cik', '320193'), (e) => e.status === 409);
+        const acme = await t.ctx.instruments.bySymbol('ACME');
+        await assert.rejects(async () => await t.ctx.instruments.addAlias(acme, 'cik', '320193'), (e) => e.status === 409);
     });
 
     await check('the signed webhook wakes the sync once per event id; a bad signature, v1-only or stale v2 is 401', async () => {

@@ -34,68 +34,68 @@ function createPrivate(ctx) {
         common.after(res, fallback, { e: e.message });
     }
 
-    function instrumentFrom(body) {
-        if (body.symbol) return instruments.bySymbol(body.symbol);
-        const r = instruments.resolve(body.q);
+    async function instrumentFrom(body) {
+        if (body.symbol) return await instruments.bySymbol(body.symbol);
+        const r = await instruments.resolve(body.q);
         return r.status === 'resolved' ? r.instrument : null;
     }
 
-    define(router, 'get', '/watchlists', 'showWatchlists', (req, res) => {
+    define(router, 'get', '/watchlists', 'showWatchlists', async (req, res) => {
         const v = req.viewer;
         const signedIn = v.kind === 'user' && v.subject;
-        const lists = signedIn ? watchlists.forOwner(v.subject).map((w) => watchlists.dto(w)) : [];
+        const lists = signedIn ? (await Promise.all((await watchlists.forOwner(v.subject)).map(async (w) => await watchlists.dto(w)))) : [];
         common.page(req, res, {
             title: 'Your watchlists', decision: privateDecision, personal: true,
             body: views.watchlistsPage({
-                viewer: v, lists, rules: signedIn ? alerts.forOwner(v.subject) : [], deliveries: signedIn ? alerts.deliveries(v.subject, 20) : [],
+                viewer: v, lists, rules: signedIn ? await alerts.forOwner(v.subject) : [], deliveries: signedIn ? await alerts.deliveries(v.subject, 20) : [],
                 csrf: common.csrf(req), loginHref: common.loginHref(req), notice: common.noticeOf(req),
             }),
         });
     });
 
-    define(router, 'post', '/watchlists', 'createWatchlistForm', ...common.signedInForm, B('trade.watchlist.create'), (req, res) => {
+    define(router, 'post', '/watchlists', 'createWatchlistForm', ...common.signedInForm, B('trade.watchlist.create'), async (req, res) => {
         try {
-            watchlists.create(req.viewer.subject, { name: req.body.name });
+            await watchlists.create(req.viewer.subject, { name: req.body.name });
             common.after(res, '/watchlists', { n: 'watchlist_created' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/rename', 'renameWatchlistForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
+    define(router, 'post', '/watchlists/rename', 'renameWatchlistForm', ...common.signedInForm, B('trade.watchlist.update'), async (req, res) => {
         try {
-            watchlists.rename(watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id), { name: req.body.name });
+            await watchlists.rename(await watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id), { name: req.body.name });
             common.after(res, '/watchlists', { n: 'watchlist_renamed' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/delete', 'deleteWatchlistForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
+    define(router, 'post', '/watchlists/delete', 'deleteWatchlistForm', ...common.signedInForm, B('trade.watchlist.update'), async (req, res) => {
         try {
-            watchlists.remove(watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id));
+            await watchlists.remove(await watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id));
             common.after(res, '/watchlists', { n: 'watchlist_deleted' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/item', 'addWatchlistItemForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
+    define(router, 'post', '/watchlists/item', 'addWatchlistItemForm', ...common.signedInForm, B('trade.watchlist.update'), async (req, res) => {
         try {
-            const w = watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id);
-            const instrument = instrumentFrom(req.body);
-            const added = watchlists.add(w, instrument, req.body.note);
+            const w = await watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id);
+            const instrument = await instrumentFrom(req.body);
+            const added = await watchlists.add(w, instrument, req.body.note);
             const from = req.get('referer') && /\/i\//.test(new URL(req.get('referer'), ctx.config.baseUrl).pathname) ? `/i/${encodeURIComponent(instrument.symbol)}` : '/watchlists';
             common.after(res, from, { n: added ? 'item_added' : 'item_present' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/item/remove', 'removeWatchlistItemForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
+    define(router, 'post', '/watchlists/item/remove', 'removeWatchlistItemForm', ...common.signedInForm, B('trade.watchlist.update'), async (req, res) => {
         try {
-            const w = watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id);
-            watchlists.drop(w, instruments.bySymbol(req.body.symbol));
+            const w = await watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id);
+            await watchlists.drop(w, await instruments.bySymbol(req.body.symbol));
             common.after(res, '/watchlists', { n: 'item_removed' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/alerts', 'createAlertForm', ...common.signedInForm, B('trade.alert.create'), (req, res) => {
-        const instrument = instruments.bySymbol(req.body.symbol);
+    define(router, 'post', '/alerts', 'createAlertForm', ...common.signedInForm, B('trade.alert.create'), async (req, res) => {
+        const instrument = await instruments.bySymbol(req.body.symbol);
         try {
-            alerts.create(req.viewer.subject, instrument, {
+            await alerts.create(req.viewer.subject, instrument, {
                 kind: req.body.kind, metric: req.body.metric, operator: req.body.operator, threshold: req.body.threshold,
                 unit: req.body.unit, currency: req.body.currency, form_types: req.body.form_types,
             });
@@ -107,9 +107,9 @@ function createPrivate(ctx) {
         }
     });
 
-    define(router, 'post', '/alerts/delete', 'deleteAlertForm', ...common.signedInForm, B('trade.alert.delete'), (req, res) => {
+    define(router, 'post', '/alerts/delete', 'deleteAlertForm', ...common.signedInForm, B('trade.alert.delete'), async (req, res) => {
         try {
-            alerts.remove(req.viewer.subject, String(req.body.rule_id || ''));
+            await alerts.remove(req.viewer.subject, String(req.body.rule_id || ''));
             common.after(res, '/watchlists', { n: 'alert_deleted' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });

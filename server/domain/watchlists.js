@@ -21,64 +21,65 @@ function createWatchlists({ store, config, ctx }) {
         items: db.prepare(`SELECT w.*, i.symbol, i.name, i.kind, i.exchange, i.status FROM trade_watchlist_items w
                            JOIN trade_instruments i ON i.id = w.instrument_id WHERE w.watchlist_id = ? ORDER BY i.symbol`),
         itemCount: db.prepare('SELECT COUNT(*) AS n FROM trade_watchlist_items WHERE watchlist_id = ?'),
-        addItem: db.prepare('INSERT OR IGNORE INTO trade_watchlist_items (watchlist_id, instrument_id, note, added_at) VALUES (?, ?, ?, ?)'),
+        addItem: db.prepare('INSERT INTO trade_watchlist_items (watchlist_id, instrument_id, note, added_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING'),
         removeItem: db.prepare('DELETE FROM trade_watchlist_items WHERE watchlist_id = ? AND instrument_id = ?'),
         touch: db.prepare('UPDATE trade_watchlists SET updated_at = ? WHERE id = ?'),
     };
 
-    const unique = (fn) => {
-        try { return fn(); } catch (err) {
-            if (err && /UNIQUE constraint failed: trade_watchlists/.test(err.message)) throw new ApiError(409, 'watchlist.name_taken', 'You already have a watchlist with this name');
+    const unique = async (fn) => {
+        try { return await fn(); } catch (err) {
+            // PostgreSQL unique_violation (23505) on trade_watchlists: the person's names are unique.
+            if (err && err.code === '23505' && err.table === 'trade_watchlists') throw new ApiError(409, 'watchlist.name_taken', 'You already have a watchlist with this name');
             throw err;
         }
     };
 
     const api = {
         /** The owner's watchlist, or 404 for anyone else (existence is not disclosed). */
-        mustOwn(subject, id) {
-            const w = q.byId.get(String(id || ''));
+        async mustOwn(subject, id) {
+            const w = await q.byId.get(String(id || ''));
             if (!w || !subject || w.owner_subject !== subject) throw new ApiError(404, 'watchlist.not_found', 'No such watchlist');
             return w;
         },
-        forOwner: (subject) => (subject ? q.forOwner.all(subject) : []),
-        items: (w) => q.items.all(w.id),
+        forOwner: async (subject) => (subject ? await q.forOwner.all(subject) : []),
+        items: async (w) => await q.items.all(w.id),
 
-        create(subject, input) {
+        async create(subject, input) {
             if (!subject) throw new ApiError(403, 'subject.required', 'Watchlists belong to a person');
             const name = str(input.name, 80, 'name', { required: true });
-            if (q.count.get(subject).n >= config.limits.watchlistsPerSubject) throw new ApiError(429, 'watchlist.limit', `At most ${config.limits.watchlistsPerSubject} watchlists`);
+            if ((await q.count.get(subject)).n >= config.limits.watchlistsPerSubject) throw new ApiError(429, 'watchlist.limit', `At most ${config.limits.watchlistsPerSubject} watchlists`);
             const id = newId('wl', store.now());
-            unique(() => q.insert.run(id, subject, name, store.now(), store.now()));
-            return q.byId.get(id);
+            await unique(async () => await q.insert.run(id, subject, name, store.now(), store.now()));
+            return await q.byId.get(id);
         },
 
-        rename(w, input) {
+        async rename(w, input) {
             const name = str(input.name, 80, 'name', { required: true });
-            unique(() => q.rename.run(name, store.now(), w.id));
-            return q.byId.get(w.id);
+            await unique(async () => await q.rename.run(name, store.now(), w.id));
+            return await q.byId.get(w.id);
         },
 
-        remove(w) { return store.tx(() => { db.prepare('DELETE FROM trade_watchlist_items WHERE watchlist_id = ?').run(w.id); return q.remove.run(w.id).changes > 0; }); },
+        async remove(w) { return await store.tx(async () => { await db.prepare('DELETE FROM trade_watchlist_items WHERE watchlist_id = ?').run(w.id); return (await q.remove.run(w.id)).changes > 0; }); },
 
-        add(w, instrument, note = null) {
+        async add(w, instrument, note = null) {
             if (!instrument) throw new ApiError(404, 'instrument.not_found', 'No such instrument');
-            if (q.itemCount.get(w.id).n >= config.limits.itemsPerWatchlist) throw new ApiError(429, 'watchlist.full', `At most ${config.limits.itemsPerWatchlist} instruments per watchlist`);
-            const added = q.addItem.run(w.id, instrument.id, str(note, 300, 'note'), store.now()).changes > 0;
-            if (added) q.touch.run(store.now(), w.id);
+            if ((await q.itemCount.get(w.id)).n >= config.limits.itemsPerWatchlist) throw new ApiError(429, 'watchlist.full', `At most ${config.limits.itemsPerWatchlist} instruments per watchlist`);
+            const added = (await q.addItem.run(w.id, instrument.id, str(note, 300, 'note'), store.now())).changes > 0;
+            if (added) await q.touch.run(store.now(), w.id);
             return added;
         },
 
-        drop(w, instrument) {
+        async drop(w, instrument) {
             if (!instrument) return false;
-            const removed = q.removeItem.run(w.id, instrument.id).changes > 0;
-            if (removed) q.touch.run(store.now(), w.id);
+            const removed = (await q.removeItem.run(w.id, instrument.id)).changes > 0;
+            if (removed) await q.touch.run(store.now(), w.id);
             return removed;
         },
 
-        dto(w, { withItems = true } = {}) {
+        async dto(w, { withItems = true } = {}) {
             const out = { id: w.id, name: w.name, created_at: iso(w.created_at), updated_at: iso(w.updated_at) };
             if (withItems) {
-                out.items = q.items.all(w.id).map((it) => ({
+                out.items = (await q.items.all(w.id)).map((it) => ({
                     instrument: { id: it.instrument_id, symbol: it.symbol, name: it.name, kind: it.kind, exchange: it.exchange, status: it.status, url: ctx.urls.instrument({ symbol: it.symbol }) },
                     note: it.note, added_at: iso(it.added_at),
                 }));

@@ -13,10 +13,10 @@ function createWorker({ config, sync, freshness, indexing, outbox, log = console
     let syncTimer = null;
     let freshTimer = null;
 
-    function freshnessTick() {
+    async function freshnessTick() {
         try {
-            const changed = freshness.evaluateAll();
-            const docs = indexing.refreshAll();
+            const changed = await freshness.evaluateAll();
+            const docs = await indexing.refreshAll();
             if (changed.length || docs.length) outbox.kick();
             return { sources: changed.length, documents: docs.length };
         } catch (err) {

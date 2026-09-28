@@ -30,15 +30,15 @@ function createIndexing({ store, config, ctx }) {
     const latestMonetary = db.prepare(`SELECT observed_at FROM trade_market_observations WHERE instrument_id = ? AND currency IS NOT NULL
                                        ORDER BY observed_at DESC LIMIT 1`);
 
-    function publishedContext(instrument) {
+    async function publishedContext(instrument) {
         if (!instrument.context_published_revision) return null;
-        return store.revisions.get(instrument.id, instrument.context_published_revision);
+        return await store.revisions.get(instrument.id, instrument.context_published_revision);
     }
 
-    function decide(instrument, now = store.now()) {
-        const rev = publishedContext(instrument);
+    async function decide(instrument, now = store.now()) {
+        const rev = await publishedContext(instrument);
         const rec = rev ? rev.meta.authorship : null;
-        const review = rev ? store.reviews.latest(instrument.id, rev.number) : null;
+        const review = rev ? await store.reviews.latest(instrument.id, rev.number) : null;
         const reviewedContext = Boolean(rec && authorship.canPublish(rec, review).ok);
         const facts = {
             state: instrument.status === 'active' ? 'published' : 'unpublished',
@@ -49,17 +49,17 @@ function createIndexing({ store, config, ctx }) {
             sensitiveReviewed: reviewedContext,
         };
         if (rec) Object.assign(facts, authorship.gateFacts(rec, review));
-        const m = latestMonetary.get(instrument.id);
+        const m = await latestMonetary.get(instrument.id);
         if (m) facts.price = { observedAt: m.observed_at };
         return seo.evaluate(facts, { policy: { minWords: config.gate.minWords, priceMaxAgeMs: config.freshness.priceMaxAgeMs }, now });
     }
 
-    function document(instrument, decision) {
-        const rev = publishedContext(instrument);
+    async function document(instrument, decision) {
+        const rev = await publishedContext(instrument);
         const identity = { owner: OWNER, type: 'instrument', id: instrument.id, revision: 0 };
         if (!decision.listable || instrument.status !== 'active') return hooks.tombstone(identity);
         const rec = rev ? rev.meta.authorship : null;
-        const aliases = ctx.instruments.aliases(instrument).map((a) => a.value);
+        const aliases = (await ctx.instruments.aliases(instrument)).map((a) => a.value);
         return hooks.buildIndexDocument({
             ...identity,
             state: 'published',
@@ -79,22 +79,22 @@ function createIndexing({ store, config, ctx }) {
     }
 
     /** Stamp and enqueue the Search document when it changed. Inside the caller's transaction. */
-    function refresh(instrument, { traceparent } = {}) {
+    async function refresh(instrument, { traceparent } = {}) {
         if (!instrument) return null;
-        const decision = decide(instrument);
-        const doc = document(instrument, decision);
-        const prev = store.sequencer.current(OWNER, 'instrument', instrument.id);
+        const decision = await decide(instrument);
+        const doc = await document(instrument, decision);
+        const prev = await store.sequencer.current(OWNER, 'instrument', instrument.id);
         if (doc.deleted && prev == null) return null;
-        const stamped = store.sequencer.stamp(doc);
+        const stamped = await store.sequencer.stamp(store.db, doc);
         if (prev != null && stamped.revision === prev) return null;
-        return ctx.outbox.emit(hooks.indexEvent({ document: stamped, now: store.now() }), { traceparent });
+        return await ctx.outbox.emit(hooks.indexEvent({ document: stamped, now: store.now() }), { traceparent });
     }
 
     return {
         OWNER,
         decide,
         refresh,
-        refreshAll: () => store.tx(() => ctx.instruments.active().map((i) => refresh(i)).filter(Boolean)),
+        refreshAll: async () => await store.tx(async () => (await Promise.all((await ctx.instruments.active()).map(async (i) => await refresh(i)))).filter(Boolean)),
     };
 }
 

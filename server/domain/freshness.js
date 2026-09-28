@@ -25,9 +25,9 @@ function createFreshness({ store, config, outbox }) {
     const q = {
         get: db.prepare('SELECT * FROM trade_source_status WHERE source_key = ?'),
         all: db.prepare('SELECT * FROM trade_source_status ORDER BY source_key'),
-        ensure: db.prepare(`INSERT OR IGNORE INTO trade_source_status (source_key, stale, stale_since, evaluated_at) VALUES (?, 1, ?, NULL)`),
+        ensure: db.prepare(`INSERT INTO trade_source_status (source_key, stale, stale_since, evaluated_at) VALUES (?, 1, ?, NULL) ON CONFLICT DO NOTHING`),
         report: db.prepare(`UPDATE trade_source_status SET name = COALESCE(@name, name), upstream_status = @status,
-                            last_success_at = CASE WHEN @last IS NULL THEN last_success_at WHEN last_success_at IS NULL OR @last > last_success_at THEN @last ELSE last_success_at END,
+                            last_success_at = CASE WHEN @last::bigint IS NULL THEN last_success_at WHEN last_success_at IS NULL OR @last > last_success_at THEN @last ELSE last_success_at END,
                             stale_after_sec = COALESCE(@window, stale_after_sec), reported_at = @now,
                             terms_note = COALESCE(@terms, terms_note), license_note = COALESCE(@license, license_note)
                             WHERE source_key = @key`),
@@ -44,8 +44,8 @@ function createFreshness({ store, config, outbox }) {
         return { known: true, stale: now > until, staleSince: now > until ? until : null, window, lastSuccessAt: row.last_success_at };
     }
 
-    function view(key, now = store.now()) {
-        const row = q.get.get(key) || null;
+    async function view(key, now = store.now()) {
+        const row = await q.get.get(key) || null;
         const v = verdict(row, now);
         return {
             key,
@@ -63,21 +63,21 @@ function createFreshness({ store, config, outbox }) {
         };
     }
 
-    function ensure(key) { q.ensure.run(key, store.now()); }
+    async function ensure(key) { await q.ensure.run(key, store.now()); }
 
     /** Emit on a transition only. Inside the caller's transaction (or its own). */
-    function evaluate(key) {
-        return store.tx(() => {
-            const row = q.get.get(key);
+    async function evaluate(key) {
+        return await store.tx(async () => {
+            const row = await q.get.get(key);
             if (!row) return null;
             const v = verdict(row, store.now());
             const first = row.evaluated_at == null;
             const was = Boolean(row.stale);
             const since = v.stale ? (v.staleSince != null ? v.staleSince : (row.stale_since || store.now())) : null;
-            q.mark.run({ key, stale: v.stale ? 1 : 0, since, now: store.now() });
+            await q.mark.run({ key, stale: v.stale ? 1 : 0, since, now: store.now() });
             // First sight: a fresh source is not a recovery; a stale one is reported once.
             if (first ? !v.stale : v.stale === was) return null;
-            const envelope = outbox.emit({
+            const envelope = await outbox.emit({
                 event_type: v.stale ? 'trade.source.stale' : 'trade.source.recovered',
                 actor: { type: 'service', id: 'trade' }, visibility: 'public', priority: 'low',
                 subject: { type: 'source', id: key },
@@ -95,23 +95,23 @@ function createFreshness({ store, config, outbox }) {
         view,
         ensure,
         evaluate,
-        evaluateAll() { return q.all.all().map((r) => evaluate(r.source_key)).filter(Boolean); },
-        all(now = store.now()) { return q.all.all().map((r) => view(r.source_key, now)); },
+        async evaluateAll() { return (await Promise.all((await q.all.all()).map(async (r) => await evaluate(r.source_key)))).filter(Boolean); },
+        async all(now = store.now()) { return (await Promise.all((await q.all.all()).map(async (r) => await view(r.source_key, now)))); },
 
         /** What Sources says about a source (its health block). Evaluates the transition. */
-        report(key, { name = null, status = null, lastSuccessAt = null, staleAfterSec = null, termsNote = null, licenseNote = null } = {}) {
-            return store.tx(() => {
-                ensure(key);
-                q.report.run({ key, name, status, last: lastSuccessAt, window: staleAfterSec, now: store.now(), terms: termsNote, license: licenseNote });
-                return evaluate(key);
+        async report(key, { name = null, status = null, lastSuccessAt = null, staleAfterSec = null, termsNote = null, licenseNote = null } = {}) {
+            return await store.tx(async () => {
+                await ensure(key);
+                await q.report.run({ key, name, status, last: lastSuccessAt, window: staleAfterSec, now: store.now(), terms: termsNote, license: licenseNote });
+                return await evaluate(key);
             });
         },
 
         /** A datum retrieved at `at` proves a successful fetch at that time. */
-        noteRetrieval(key, at) {
-            ensure(key);
-            q.retrieval.run({ key, at });
-            return evaluate(key);
+        async noteRetrieval(key, at) {
+            await ensure(key);
+            await q.retrieval.run({ key, at });
+            return await evaluate(key);
         },
     };
 }

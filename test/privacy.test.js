@@ -9,8 +9,8 @@ const { boot, check, done } = require('./helpers/boot');
 
 (async () => {
     const t = await boot();
-    t.instrument({ symbol: 'ACME', name: 'Acme Corp' });
-    t.instrument({ symbol: 'ZETA', name: 'Zeta Holdings' });
+    await t.instrument({ symbol: 'ACME', name: 'Acme Corp' });
+    await t.instrument({ symbol: 'ZETA', name: 'Zeta Holdings' });
     const form = (user, fields) => ({ as: user, form: { _csrf: t.csrf(user), ...fields } });
     let wlId;
 
@@ -27,7 +27,7 @@ const { boot, check, done } = require('./helpers/boot');
         const c = await t.get('/watchlists', form(t.alice, { name: 'Secret plans' }));
         assert.strictEqual(c.status, 303);
         assert.ok(/private, no-store/.test(c.headers.get('cache-control')));
-        wlId = t.ctx.watchlists.forOwner(t.alice.subject)[0].id;
+        wlId = (await t.ctx.watchlists.forOwner(t.alice.subject))[0].id;
         assert.strictEqual((await t.get('/watchlists/item', form(t.alice, { watchlist_id: wlId, symbol: 'ACME' }))).status, 303);
         assert.strictEqual((await t.get('/watchlists/item', form(t.alice, { watchlist_id: wlId, q: 'Zeta Holdings' }))).status, 303);
         const page = await t.get('/watchlists', { as: t.alice });
@@ -42,7 +42,7 @@ const { boot, check, done } = require('./helpers/boot');
         assert.strictEqual(r.status, 403);
         const r2 = await t.get('/watchlists', { as: t.alice, form: { _csrf: t.csrf(t.bob), name: 'Injected' } });
         assert.strictEqual(r2.status, 403);
-        assert.strictEqual(t.ctx.watchlists.forOwner(t.alice.subject).length, 1);
+        assert.strictEqual((await t.ctx.watchlists.forOwner(t.alice.subject)).length, 1);
     });
 
     await check('bob cannot see, change or delete alice\'s watchlist (404, existence not disclosed)', async () => {
@@ -55,7 +55,7 @@ const { boot, check, done } = require('./helpers/boot');
         const del = await t.get('/watchlists/delete', form(t.bob, { watchlist_id: wlId }));
         assert.strictEqual(del.status, 303);
         assert.strictEqual(new URL(del.headers.get('location'), 'https://x').searchParams.get('e'), 'No such watchlist');
-        assert.strictEqual(t.ctx.watchlists.forOwner(t.alice.subject).length, 1, 'still there');
+        assert.strictEqual((await t.ctx.watchlists.forOwner(t.alice.subject)).length, 1, 'still there');
         assert.strictEqual((await t.get(`/api/v1/watchlists/${wlId}`)).status, 401, 'anonymous API');
     });
 
@@ -102,17 +102,17 @@ const { boot, check, done } = require('./helpers/boot');
         assert.ok(!all.includes(t.alice.subject));
         const robots = (await t.get('/robots.txt')).text;
         for (const p of ['/watchlists', '/alerts', '/editor', '/api/']) assert.ok(robots.includes(`Disallow: ${p}`), p);
-        const events = JSON.stringify(t.events());
+        const events = JSON.stringify(await t.events());
         assert.ok(!events.includes(wlId) && !events.includes('Secret plans') && !events.includes('watchlist'));
-        assert.ok(!t.events().some((e) => e.event_type.includes('watchlist')));
+        assert.ok(!(await t.events()).some((e) => e.event_type.includes('watchlist')));
     });
 
     await check('removing and deleting work for the owner', async () => {
         assert.strictEqual((await t.get('/watchlists/item/remove', form(t.alice, { watchlist_id: wlId, symbol: 'ZETA' }))).status, 303);
-        assert.deepStrictEqual(t.ctx.watchlists.items(t.ctx.watchlists.forOwner(t.alice.subject)[0]).map((i) => i.symbol), ['ACME']);
+        assert.deepStrictEqual((await t.ctx.watchlists.items((await t.ctx.watchlists.forOwner(t.alice.subject))[0])).map((i) => i.symbol), ['ACME']);
         assert.strictEqual((await t.get('/watchlists/delete', form(t.alice, { watchlist_id: wlId }))).status, 303);
-        assert.strictEqual(t.ctx.watchlists.forOwner(t.alice.subject).length, 0);
-        assert.strictEqual(t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_watchlist_items WHERE watchlist_id = ?').get(wlId).n, 0);
+        assert.strictEqual((await t.ctx.watchlists.forOwner(t.alice.subject)).length, 0);
+        assert.strictEqual((await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_watchlist_items WHERE watchlist_id = ?').get(wlId)).n, 0);
     });
 
     await t.close();

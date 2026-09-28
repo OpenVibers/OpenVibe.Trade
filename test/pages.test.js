@@ -13,8 +13,8 @@ const DISCLAIMER = 'Information only — not investment advice; no trading here.
 
 (async () => {
     const t = await boot();
-    const acme = t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567', exchange: 'NYSE' });
-    t.observe(acme, { metric: 'price.close', value: '10.50', source_ref: 'a', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
+    const acme = await t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567', exchange: 'NYSE' });
+    await t.observe(acme, { metric: 'price.close', value: '10.50', source_ref: 'a', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
     t.sources.setSource('sec-xbrl-filings', { lastSuccessAt: t.iso(t.T0), staleAfterSec: 2700 });
     t.sources.putItem({ canonical_url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000001/0001234567-26-000001-index.htm', title: 'ACME CORP', summary: '10-K', published_at: '2026-09-22T10:00:00Z', retrieved_at: t.iso(t.T0) });
     t.sources.putItem({ canonical_url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000002/0001234567-26-000002-index.htm', title: 'ACME CORP', summary: '8-K', retrieved_at: t.iso(t.T0) });
@@ -104,7 +104,7 @@ const DISCLAIMER = 'Information only — not investment advice; no trading here.
     await check('the historical marketplace branch is an open question in docs, and nothing of it is implemented', async () => {
         const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'marketplace-open-question.md'), 'utf8');
         assert.ok(/ADR-025/.test(doc) && /unresolved|open question/i.test(doc));
-        const tables = t.ctx.store.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
+        const tables = (await t.ctx.store.db.prepare("SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema()").all()).map((r) => r.name);
         assert.ok(!tables.some((n) => /order|listing|escrow|wallet|custody|payment|cart/.test(n)), tables.join(','));
     });
 

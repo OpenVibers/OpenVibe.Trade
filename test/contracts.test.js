@@ -50,16 +50,16 @@ const DIR = path.join(__dirname, '..', 'docs', 'capabilities-proposal');
 
     await check('every envelope Trade actually produces validates as events.event-envelope@1 (and Search documents as search.index-document@1)', async () => {
         const t = await boot();
-        const acme = t.instrument({ symbol: 'ACME', name: 'Acme Corp' });
-        t.ctx.freshness.report('test-feed', { status: 'healthy', lastSuccessAt: t.T0, staleAfterSec: 60 });
+        const acme = await t.instrument({ symbol: 'ACME', name: 'Acme Corp' });
+        await t.ctx.freshness.report('test-feed', { status: 'healthy', lastSuccessAt: t.T0, staleAfterSec: 60 });
         await t.get('/api/v1/alerts', { as: t.alice, json: { symbol: 'ACME', kind: 'threshold', metric: 'price.close', operator: 'above', threshold: '1', unit: 'USD' } });
         t.clock.advance(1000);
-        t.observe(acme, { metric: 'price.close', value: '2', source_ref: 'x', observed_at: t.iso(t.clock.now() - 1000), retrieved_at: t.iso(t.clock.now()) });
+        await t.observe(acme, { metric: 'price.close', value: '2', source_ref: 'x', observed_at: t.iso(t.clock.now() - 1000), retrieved_at: t.iso(t.clock.now()) });
         t.clock.advance(3600e3);
-        t.ctx.freshness.evaluateAll();
-        const rev = t.ctx.context.propose({ kind: 'user', subject: t.editor.subject, editor: true }, acme, { body: Array.from({ length: 80 }, () => 'word').join(' ') });
-        t.ctx.context.publish(acme, rev.revision.number);
-        const all = t.events();
+        await t.ctx.freshness.evaluateAll();
+        const rev = await t.ctx.context.propose({ kind: 'user', subject: t.editor.subject, editor: true }, acme, { body: Array.from({ length: 80 }, () => 'word').join(' ') });
+        await t.ctx.context.publish(acme, rev.revision.number);
+        const all = await t.events();
         const types = new Set(all.map((e) => e.event_type));
         for (const ty of ['trade.observation.created', 'trade.alert.triggered', 'trade.source.stale', 'trade.index_document.upserted']) assert.ok(types.has(ty), `${ty} produced`);
         for (const e of all) {

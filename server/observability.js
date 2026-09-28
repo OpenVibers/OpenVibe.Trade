@@ -13,7 +13,7 @@
 const { createReadiness } = require('openvibe-shared/ready');
 const { CHARTER_TABLES } = require('./db');
 
-function createTradeReadiness({ store, auth, outbox, sync, freshness, release = null }) {
+function createTradeReadiness({ store, auth, outbox, sync, freshness, valkey = null, release = null }) {
     const { db } = store;
     return createReadiness({
         service: 'trade',
@@ -21,12 +21,16 @@ function createTradeReadiness({ store, auth, outbox, sync, freshness, release = 
         checks: [
             {
                 name: 'db', required: true,
-                check: () => {
-                    const names = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view')").all().map((r) => r.name));
+                check: async () => {
+                    // A real round trip that names the store (postgresql / pglite), and the charter tables present.
+                    const r = await db.ready();
+                    if (!r.ok) return r.error;
+                    const names = new Set((await db.prepare('SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema()').all()).map((x) => x.name));
                     const missing = CHARTER_TABLES.filter((t) => !names.has(t));
-                    return missing.length ? `missing ${missing.join(', ')}` : true;
+                    return missing.length ? `missing ${missing.join(', ')} (migrations did not run)` : { ok: true, detail: r.detail };
                 },
             },
+            { name: 'valkey', required: false, check: async () => (valkey ? valkey.ready() : { skipped: 'VALKEY_URL not set: per-actor limits count in this process only' }) },
             {
                 name: 'network_jwks', required: false,
                 check: () => {
@@ -37,8 +41,8 @@ function createTradeReadiness({ store, auth, outbox, sync, freshness, release = 
             },
             {
                 name: 'events_relay', required: false,
-                check: () => {
-                    const s = outbox.status();
+                check: async () => {
+                    const s = await outbox.status();
                     if (!s.enabled) return `relay off (EVENTS_URL or OV_OAUTH_CLIENT_SECRET unset); ${s.pending} events waiting`;
                     if (s.rejected) return `${s.rejected} events rejected by OpenVibe.Events`;
                     return { ok: true, detail: { pending: s.pending } };
@@ -46,8 +50,8 @@ function createTradeReadiness({ store, auth, outbox, sync, freshness, release = 
             },
             {
                 name: 'sources_sync', required: false,
-                check: () => {
-                    const s = sync.state();
+                check: async () => {
+                    const s = await sync.state();
                     if (!s.enabled) return 'Sources sync off (OV_OAUTH_CLIENT_SECRET unset): no new filings or observations arrive';
                     if (s.last_error) return `last Sources sync failed: ${s.last_error}`;
                     if (!s.last_ok_at) return 'Sources sync has not completed yet';
@@ -56,8 +60,8 @@ function createTradeReadiness({ store, auth, outbox, sync, freshness, release = 
             },
             {
                 name: 'freshness', required: false,
-                check: () => {
-                    const all = freshness.all();
+                check: async () => {
+                    const all = await freshness.all();
                     const stale = all.filter((s) => s.stale).map((s) => s.key);
                     return stale.length ? `${stale.length} of ${all.length} sources stale: ${stale.slice(0, 10).join(', ')}` : { ok: true, detail: { sources: all.length } };
                 },

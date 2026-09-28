@@ -81,7 +81,7 @@ function createViewerResolver({ auth, config }) {
             const payload = decodeJwtPayload(token);
             if (payload && typeof payload.sub === 'string' && PRINCIPAL_SUB.test(payload.sub)) {
                 if (opts.services === false) return ANONYMOUS;
-                return fromServiceToken(req, token);
+                return await fromServiceToken(req, token);
             }
         }
         const token = extractToken(req);

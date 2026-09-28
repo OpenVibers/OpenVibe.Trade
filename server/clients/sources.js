@@ -34,8 +34,8 @@ function createSourcesClient({ config, fetchImpl = globalThis.fetch }) {
 
     return {
         enabled,
-        items: ({ after = 0, limit = 200 } = {}) => get(`/api/v1/items?category=${encodeURIComponent(config.sources.category)}&after=${after}&limit=${limit}&include_removed=1`),
-        sources: () => get('/api/v1/sources'),
+        items: async ({ after = 0, limit = 200 } = {}) => await get(`/api/v1/items?category=${encodeURIComponent(config.sources.category)}&after=${after}&limit=${limit}&include_removed=1`),
+        sources: async () => await get('/api/v1/sources'),
     };
 }
 

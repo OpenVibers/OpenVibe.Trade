@@ -275,8 +275,8 @@ ${pending.length ? html`<ul>${pending.map((p) => html`<li><a href="/editor/i/${e
 <ul>${instruments.map((i) => html`<li><a href="/editor/i/${encodeURIComponent(i.symbol)}">${i.symbol}</a> — ${i.name}</li>`)}</ul>`;
 }
 
-function editorInstrument({ instrument, aliases, revisions, documents, observations, csrf, notice: n, kinds, head }) {
-    const revs = revisions.map((r) => html`<li class="card">
+async function editorInstrument({ instrument, aliases, revisions, documents, observations, csrf, notice: n, kinds, head }) {
+    const revs = await revisions.map((r) => html`<li class="card">
 <p><strong>Revision ${r.revision}</strong> ${r.published ? html`<span class="badge fresh">published</span>` : ''} ${r.disclosure ? html`<span class="badge">${r.disclosure.short}</span>` : html`<span class="badge">editor</span>`}
  ${r.needs_review ? html`<span class="badge stale">needs a person’s review</span>` : ''} · written ${when(r.written_at)} · as of ${r.as_of ? when(r.as_of) : 'no dated citation'}</p>
 <div class="context-body">${raw(r.body_html)}</div>

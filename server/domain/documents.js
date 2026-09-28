@@ -33,40 +33,40 @@ function createDocuments({ store, ctx }) {
     };
 
     const api = {
-        get: (id) => q.byId.get(id) || null,
-        byItem: (itemId) => q.byItem.get(itemId) || null,
-        forInstrument: (instrument, { limit = 50, offset = 0 } = {}) => q.forInstrument.all(instrument.id, limit, offset),
-        count: (instrument) => q.countFor.get(instrument.id).n,
-        recent: (limit = 50) => q.recent.all(limit),
+        get: async (id) => await q.byId.get(id) || null,
+        byItem: async (itemId) => await q.byItem.get(itemId) || null,
+        forInstrument: async (instrument, { limit = 50, offset = 0 } = {}) => await q.forInstrument.all(instrument.id, limit, offset),
+        count: async (instrument) => (await q.countFor.get(instrument.id)).n,
+        recent: async (limit = 50) => await q.recent.all(limit),
 
         /** From a mapped Sources item (domain/mapping.js). → { document, created, changed } */
-        upsert(doc, instrument, { traceparent } = {}) {
-            return store.tx(() => {
-                const existing = q.byItem.get(doc.source_item_id);
+        async upsert(doc, instrument, { traceparent } = {}) {
+            return await store.tx(async () => {
+                const existing = await q.byItem.get(doc.source_item_id);
                 if (existing) {
                     if (existing.instrument_id !== instrument.id) return { document: existing, created: false, changed: false };
                     if (doc.source_revision > existing.source_revision) {
-                        q.revise.run({ ...doc, id: existing.id, now: store.now() });
+                        await q.revise.run({ ...doc, id: existing.id, now: store.now() });
                     } else {
-                        q.touch.run({ id: existing.id, retrieved_at: doc.retrieved_at, now: store.now() });
+                        await q.touch.run({ id: existing.id, retrieved_at: doc.retrieved_at, now: store.now() });
                     }
-                    ctx.freshness.noteRetrieval(doc.source_key, doc.retrieved_at);
-                    return { document: q.byId.get(existing.id), created: false, changed: doc.source_revision > existing.source_revision };
+                    await ctx.freshness.noteRetrieval(doc.source_key, doc.retrieved_at);
+                    return { document: await q.byId.get(existing.id), created: false, changed: doc.source_revision > existing.source_revision };
                 }
                 const id = newId('doc', store.now());
-                q.insert.run({ ...doc, id, instrument_id: instrument.id, now: store.now() });
-                const row = q.byId.get(id);
-                ctx.freshness.noteRetrieval(doc.source_key, doc.retrieved_at);
-                ctx.alerts.onDocument(row, instrument, { traceparent });
+                await q.insert.run({ ...doc, id, instrument_id: instrument.id, now: store.now() });
+                const row = await q.byId.get(id);
+                await ctx.freshness.noteRetrieval(doc.source_key, doc.retrieved_at);
+                await ctx.alerts.onDocument(row, instrument, { traceparent });
                 return { document: row, created: true, changed: true };
             });
         },
 
         /** Sources removed the item: hide the document (the row stays as the record). */
-        remove(itemId, { at, reason }) {
-            const row = q.byItem.get(itemId);
+        async remove(itemId, { at, reason }) {
+            const row = await q.byItem.get(itemId);
             if (!row) return false;
-            return q.remove.run({ id: row.id, at: at || store.now(), reason: String(reason || 'removed at the source').slice(0, 500), now: store.now() }).changes > 0;
+            return (await q.remove.run({ id: row.id, at: at || store.now(), reason: String(reason || 'removed at the source').slice(0, 500), now: store.now() })).changes > 0;
         },
 
         dto(d) {

@@ -53,17 +53,17 @@ const { boot, check, done } = require('./helpers/boot');
 
     await check('watchlists: 10 a minute per person, shared by the API and the form; nothing stored past it', async () => {
         clock = Date.UTC(2026, 8, 27, 12, 5, 0);
-        const count = () => t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_watchlists').get().n;
+        const count = async () => (await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_watchlists').get()).n;
         for (let i = 0; i < 10; i++) {
             const r = await t.get('/api/v1/watchlists', { as: alice, json: { name: `List ${i}` } });
             assert.strictEqual(r.status, 201, `watchlist ${i + 1}: ${r.text}`);
         }
-        const before = count();
+        const before = await count();
         const form = await t.get('/watchlists', { as: alice, form: { _csrf: t.csrf(alice), name: 'One too many' } });
         assert.deepStrictEqual([form.status, form.json().code, form.headers.get('retry-after')], [429, 'rate_limited', '60']);
         const viaService = await t.get('/api/v1/watchlists', { as: svc, headers: { 'x-ov-subject': alice.subject }, json: { name: 'Relayed' } });
         assert.strictEqual(viaService.status, 429, 'a service creating for the person shares their budget');
-        assert.strictEqual(count(), before, 'nothing stored');
+        assert.strictEqual(await count(), before, 'nothing stored');
         const other = await t.get('/api/v1/watchlists', { as: bob, json: { name: 'Bob list' } });
         assert.strictEqual(other.status, 201, `another person still creates: ${other.text}`);
     });

@@ -76,7 +76,7 @@ async function startSources({ network }) {
     const calls = [];
     let seq = 0;
     let down = false;
-    const srv = await listen((req, raw, json) => {
+    const srv = await listen(async (req, raw, json) => {
         calls.push({ method: req.method, url: req.url });
         if (down) return json(503, { code: 'down' });
         const token = String(req.headers.authorization || '').slice(7);
@@ -97,7 +97,7 @@ async function startSources({ network }) {
             const page = rows.slice(0, limit);
             const keys = [...new Set(page.map((i) => i.source_key))];
             const health = {};
-            for (const k of keys) if (sources.has(k)) health[k] = sources.get(k).health;
+            for (const k of keys) if (sources.has(k)) health[k] = (await sources.get(k)).health;
             return json(200, { items: page, next_after: page.length ? page[page.length - 1].change_seq : after, more: rows.length > limit, sources: health });
         }
         return json(404, { code: 'route.not_found' });

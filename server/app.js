@@ -57,11 +57,12 @@ const VERSION = require('../package.json').version;
 
 /** opts: config, store | dbPath, now (clock), fetchImpl, auth (a createAuthClient-like object), log,
  *  limitsNow (the per-actor limiter's clock, tests; default the wall clock) */
-function createApp(opts = {}) {
+async function createApp(opts = {}) {
     const config = opts.config || configLib.load();
     const log = opts.log || console;
     const fetchImpl = opts.fetchImpl || globalThis.fetch;
-    const store = opts.store || openStore(opts.dbPath || config.dbPath, { now: opts.now });
+    // PostgreSQL (ADR-035): opened and migrated here unless the caller (a test, a script) hands in a store.
+    const store = opts.store || await openStore(config, { now: opts.now, log });
 
     // One context object: domain modules reach each other through it at call time.
     const ctx = { config, store, log };
@@ -93,7 +94,10 @@ function createApp(opts = {}) {
     app.locals.ctx = ctx;
     // Per-actor limits (http/actor-limits.js) on /api/v1 and the forms, counted once each router resolved
     // req.viewer; the per-address limits below stay.
-    ctx.limits = createActorLimits({ config, now: opts.limitsNow || (() => Date.now()), registry: metrics.registry, log });
+    // Valkey (ADR-035): shared, never-authoritative state (per-actor limit counters). Optional.
+    const valkey = opts.valkey !== undefined ? opts.valkey : (config.valkey.url ? require('openvibe-sdk/valkey').createValkey({ url: config.valkey.url, prefix: config.valkey.prefix, log }) : null);
+    ctx.valkey = valkey;
+    ctx.limits = createActorLimits({ config, now: opts.limitsNow || (() => Date.now()), registry: metrics.registry, log, valkey });
 
     app.use(contracts.http.middleware());
     app.use(helmet({
@@ -127,7 +131,7 @@ function createApp(opts = {}) {
     // GET /release.json (ADR-016) and POST /release-metrics (release_client_updates_total in /metrics).
     define(machine, 'get', '/release.json', 'releaseInfo', release.handler);
     define(machine, 'post', '/release-metrics', 'releaseMetrics', release.collect(metrics.registry));
-    const readiness = createTradeReadiness({ store, auth: ctx.auth, outbox: ctx.outbox, sync: ctx.sync, freshness: ctx.freshness, release: release.release });
+    const readiness = createTradeReadiness({ store, auth: ctx.auth, outbox: ctx.outbox, sync: ctx.sync, freshness: ctx.freshness, release: release.release, valkey: ctx.valkey });
     define(machine, 'get', '/api/ready', 'readiness', readiness.handler);
     app.use(machine);
 

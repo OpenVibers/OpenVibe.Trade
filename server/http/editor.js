@@ -36,8 +36,8 @@ function createEditor(ctx) {
     // does the same thing, checked once the session, form token and editor list are.
     const B = (name) => ctx.limits.budget(name);
 
-    function mustInstrument(req) {
-        const i = instruments.bySymbol(req.params.symbol);
+    async function mustInstrument(req) {
+        const i = await instruments.bySymbol(req.params.symbol);
         if (!i) throw new ApiError(404, 'instrument.not_found', 'No such instrument');
         return i;
     }
@@ -49,58 +49,58 @@ function createEditor(ctx) {
         common.after(res, path, { e: e.message });
     }
 
-    define(router, 'get', '/editor', 'showEditor', requireEditor, (req, res) => {
-        const all = instruments.active();
+    define(router, 'get', '/editor', 'showEditor', requireEditor, async (req, res) => {
+        const all = await instruments.active();
         const pending = [];
-        for (const i of all) for (const p of context.pending(i)) pending.push({ symbol: i.symbol, revision: p.revision, label: p.needs_review ? 'AI draft, needs review' : 'not published' });
+        for (const i of all) for (const p of await context.pending(i)) pending.push({ symbol: i.symbol, revision: p.revision, label: p.needs_review ? 'AI draft, needs review' : 'not published' });
         common.page(req, res, { title: 'Editor', decision, personal: true, body: views.editorHome({ instruments: all, pending, csrf: common.csrf(req), notice: common.noticeOf(req), kinds: instruments.KINDS }) });
     });
 
-    define(router, 'post', '/editor/instruments', 'createInstrumentForm', ...form, B('trade.instrument.manage'), (req, res) => {
+    define(router, 'post', '/editor/instruments', 'createInstrumentForm', ...form, B('trade.instrument.manage'), async (req, res) => {
         try {
-            const i = instruments.create(req.body, req.viewer.subject);
-            ctx.store.tx(() => indexing.refresh(i));
+            const i = await instruments.create(req.body, req.viewer.subject);
+            await ctx.store.tx(async () => await indexing.refresh(i));
             common.after(res, editPath(i), { n: 'instrument_created' });
         } catch (err) { fail(req, res, '/editor', err); }
     });
 
-    define(router, 'get', '/editor/i/:symbol', 'showEditorInstrument', requireEditor, (req, res) => {
+    define(router, 'get', '/editor/i/:symbol', 'showEditorInstrument', requireEditor, async (req, res) => {
         let i;
-        try { i = mustInstrument(req); } catch (err) { return common.failure(req, res, err); }
-        const revisions = context.revisions(i, { limit: 30 }).map((r) => context.view(i, r));
+        try { i = await mustInstrument(req); } catch (err) { return common.failure(req, res, err); }
+        const revisions = (await Promise.all((await context.revisions(i, { limit: 30 })).map(async (r) => await context.view(i, r))));
         common.page(req, res, {
             title: `Editor · ${i.symbol}`, decision, personal: true,
             body: views.editorInstrument({
-                instrument: i, aliases: instruments.aliases(i), revisions, head: context.head(i) ? context.head(i).number : 0,
-                documents: documents.forInstrument(i, { limit: 30 }), observations: observations.latest(i),
+                instrument: i, aliases: await instruments.aliases(i), revisions, head: await context.head(i) ? (await context.head(i)).number : 0,
+                documents: await documents.forInstrument(i, { limit: 30 }), observations: await observations.latest(i),
                 csrf: common.csrf(req), notice: common.noticeOf(req), kinds: instruments.KINDS,
             }),
         });
     });
 
-    define(router, 'post', '/editor/i/:symbol', 'saveInstrumentForm', ...form, B('trade.instrument.manage'), (req, res) => {
+    define(router, 'post', '/editor/i/:symbol', 'saveInstrumentForm', ...form, B('trade.instrument.manage'), async (req, res) => {
         try {
-            const i = mustInstrument(req);
-            const updated = instruments.update(i, { name: req.body.name, kind: req.body.kind, exchange: req.body.exchange, cik: req.body.cik, currency: req.body.currency, status: req.body.status });
-            ctx.store.tx(() => indexing.refresh(updated));
+            const i = await mustInstrument(req);
+            const updated = await instruments.update(i, { name: req.body.name, kind: req.body.kind, exchange: req.body.exchange, cik: req.body.cik, currency: req.body.currency, status: req.body.status });
+            await ctx.store.tx(async () => await indexing.refresh(updated));
             common.after(res, editPath(updated), { n: 'instrument_saved' });
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/aliases', 'addAliasForm', ...form, B('trade.instrument.manage'), (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/aliases', 'addAliasForm', ...form, B('trade.instrument.manage'), async (req, res) => {
         try {
-            const i = mustInstrument(req);
-            instruments.addAlias(i, String(req.body.kind || ''), req.body.value, req.viewer.subject);
+            const i = await mustInstrument(req);
+            await instruments.addAlias(i, String(req.body.kind || ''), req.body.value, req.viewer.subject);
             common.after(res, editPath(i), { n: 'alias_added' });
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context', 'writeContextForm', ...form, B('trade.context.propose'), (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context', 'writeContextForm', ...form, B('trade.context.propose'), async (req, res) => {
         try {
-            const i = mustInstrument(req);
+            const i = await mustInstrument(req);
             const raw = req.body.cite == null ? [] : Array.isArray(req.body.cite) ? req.body.cite : [req.body.cite];
             const cites = raw.map((s) => { const [kind, id] = String(s).split(':'); return { kind, id }; });
-            const out = context.propose(req.viewer, i, { body: req.body.body, cites, expected_revision: req.body.expected_revision, publish: req.body.publish === '1' });
+            const out = await context.propose(req.viewer, i, { body: req.body.body, cites, expected_revision: req.body.expected_revision, publish: req.body.publish === '1' });
             common.after(res, editPath(i), { n: out.published ? 'context_published' : 'context_saved' });
         } catch (err) {
             if (err && err.code === 'revision.conflict') return common.after(res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, { e: 'Someone saved a newer revision while you were writing. Your text was not saved: copy it, reload and try again.' });
@@ -108,27 +108,27 @@ function createEditor(ctx) {
         }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context/:n/review', 'reviewContextForm', ...form, B('trade.context.publish'), (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context/:n/review', 'reviewContextForm', ...form, B('trade.context.publish'), async (req, res) => {
         try {
-            const i = mustInstrument(req);
+            const i = await mustInstrument(req);
             const decisionValue = req.body.decision === 'approved' ? 'approved' : 'rejected';
-            context.review(req.viewer, i, parseInt(req.params.n, 10), { decision: decisionValue, note: req.body.note || null });
+            await context.review(req.viewer, i, parseInt(req.params.n, 10), { decision: decisionValue, note: req.body.note || null });
             common.after(res, editPath(i), { n: decisionValue === 'approved' ? 'context_published' : 'context_rejected' });
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context/:n/publish', 'publishContextForm', ...form, B('trade.context.publish'), (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context/:n/publish', 'publishContextForm', ...form, B('trade.context.publish'), async (req, res) => {
         try {
-            const i = mustInstrument(req);
-            context.publish(i, parseInt(req.params.n, 10));
+            const i = await mustInstrument(req);
+            await context.publish(i, parseInt(req.params.n, 10));
             common.after(res, editPath(i), { n: 'context_published' });
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context/retract', 'retractContextForm', ...form, B('trade.context.publish'), (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context/retract', 'retractContextForm', ...form, B('trade.context.publish'), async (req, res) => {
         try {
-            const i = mustInstrument(req);
-            context.retract(req.viewer, i);
+            const i = await mustInstrument(req);
+            await context.retract(req.viewer, i);
             common.after(res, editPath(i), { n: 'context_retracted' });
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });

@@ -84,18 +84,20 @@ function createDiscovery(ctx) {
         }));
     });
 
-    define(router, 'get', '/sitemap.xml', 'sitemapIndex', (_req, res) => {
-        const times = instruments.active().filter((i) => indexing.decide(i).indexable && i.context_published_at).map((i) => i.context_published_at);
+    define(router, 'get', '/sitemap.xml', 'sitemapIndex', async (_req, res) => {
+        const active = await instruments.active();
+        const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
+        const times = active.filter((i, n) => decisions[n].indexable && i.context_published_at).map((i) => i.context_published_at);
         const newest = times.length ? new Date(Math.max(...times)).toISOString() : null;
         xml(res, seo.sitemapIndex([{ loc: abs('/sitemaps/instruments.xml'), ...(newest ? { lastmod: newest } : {}) }]));
     });
 
-    define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', (_req, res) => {
-        const entries = instruments.active().map((i) => ({
+    define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {
+        const entries = (await Promise.all((await instruments.active()).map(async (i) => ({
             loc: urls.instrument(i),
             ...(i.context_published_at ? { lastmod: new Date(i.context_published_at).toISOString() } : {}),
-            decision: indexing.decide(i),
-        }));
+            decision: await indexing.decide(i),
+        }))));
         xml(res, seo.sitemap(entries).files[0]);
     });
 
@@ -106,17 +108,17 @@ function createDiscovery(ctx) {
         description: `Filings and documents recorded from OpenVibe.Sources, with their source dates. ${DISCLAIMER}`,
         language: 'en',
     });
-    const recentItems = () => documents.recent(50).map((d) => feedItem(d, instruments.get(d.instrument_id)));
-    define(router, 'get', '/feed.xml', 'documentsRss', (_req, res) => sendFeed(res, 'rss', siteChannel('rss'), recentItems()));
-    define(router, 'get', '/atom.xml', 'documentsAtom', (_req, res) => sendFeed(res, 'atom', siteChannel('atom'), recentItems()));
-    define(router, 'get', '/feed.json', 'documentsJsonFeed', (_req, res) => sendFeed(res, 'json', siteChannel('json'), recentItems()));
+    const recentItems = async () => (await Promise.all((await documents.recent(50)).map(async (d) => feedItem(d, await instruments.get(d.instrument_id)))));
+    define(router, 'get', '/feed.xml', 'documentsRss', async (_req, res) => sendFeed(res, 'rss', siteChannel('rss'), await recentItems()));
+    define(router, 'get', '/atom.xml', 'documentsAtom', async (_req, res) => sendFeed(res, 'atom', siteChannel('atom'), await recentItems()));
+    define(router, 'get', '/feed.json', 'documentsJsonFeed', async (_req, res) => sendFeed(res, 'json', siteChannel('json'), await recentItems()));
 
-    define(router, 'get', '/i/:symbol/documents.:format', 'instrumentDocumentsFeed', (req, res) => {
+    define(router, 'get', '/i/:symbol/documents.:format', 'instrumentDocumentsFeed', async (req, res) => {
         const type = { xml: 'rss', atom: 'atom', json: 'json' }[req.params.format];
-        const instrument = instruments.bySymbol(req.params.symbol);
+        const instrument = await instruments.bySymbol(req.params.symbol);
         if (!type || !instrument || instrument.status !== 'active') return common.notFound(req, res);
         if (instrument.symbol !== req.params.symbol) return res.redirect(301, urls.path.documentsFeed(instrument, type));
-        const items = documents.forInstrument(instrument, { limit: 50 }).map((d) => feedItem(d, instrument));
+        const items = (await documents.forInstrument(instrument, { limit: 50 })).map((d) => feedItem(d, instrument));
         sendFeed(res, type, {
             title: `${instrument.symbol} documents — OpenVibe.Trade`, link: urls.instrument(instrument),
             feedUrl: abs(urls.path.documentsFeed(instrument, type)),

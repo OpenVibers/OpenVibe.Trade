@@ -4,12 +4,17 @@
   "code": true,
   "wave": "W19",
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
-  "runtime": "node 22, express 4, better-sqlite3 11",
+  "runtime": "node 22, express 4, PostgreSQL 18 (openvibe-sdk/db, async) + Valkey 9",
   "port": 4860,
   "domain": "openvibe.trade",
   "scope": "informational only (ADR-025): no custody, no order execution, no escrow, no listings between users, no personalised advice",
-  "contracts": "openvibe-contracts v0.49.0",
-  "packages": ["openvibe-contracts v0.49.0", "openvibe-publishing v0.4.0", "openvibe-shared v1.25.0", "openvibe-sdk v0.12.0"],
+  "contracts": "openvibe-contracts v0.76.0",
+  "packages": [
+    "openvibe-contracts v0.76.0",
+    "openvibe-publishing v1.0.0",
+    "openvibe-shared v1.25.0",
+    "openvibe-sdk v0.20.0"
+  ],
   "capabilities": [
     "trade.instrument.resolve",
     "trade.instrument.manage",

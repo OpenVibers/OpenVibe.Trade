@@ -48,11 +48,14 @@ async function boot(opts = {}) {
     const { createApp } = require('../../server/app');
     const quiet = { log() {}, warn() {}, error: (...a) => { if (process.env.VERBOSE) console.error(...a); } };
 
+    const { createStore } = require('../../server/db');
+    // One database per boot (PGlite, or TRADE_TEST_STORE=pg: the containers); a restart keeps it, like a file did.
+    const testdb = await require('./db').testDb();
     let server = null;
     let built = null;
     async function start() {
         const config = configLib.load(env);
-        built = createApp({ config, now: clock.now, log: opts.log || quiet, limitsNow: opts.limitsNow });
+        built = await createApp({ config, store: createStore(testdb.db, { now: clock.now }), now: clock.now, log: opts.log || quiet, limitsNow: opts.limitsNow });
         await built.ctx.auth.ensureKey();
         server = await new Promise((resolve) => { const s = http.createServer(built.app); s.listen(0, '127.0.0.1', () => resolve(s)); });
         t.base = `http://127.0.0.1:${server.address().port}`;
@@ -61,7 +64,7 @@ async function boot(opts = {}) {
     }
     async function stop() {
         if (server) await new Promise((r) => server.close(r));
-        if (built) { built.ctx.worker.stop(); await built.ctx.outbox.stop(); built.ctx.store.close(); }
+        if (built) { built.ctx.worker.stop(); await built.ctx.outbox.stop(); }
         server = null; built = null;
     }
 
@@ -78,8 +81,8 @@ async function boot(opts = {}) {
         return { status: res.status, headers: res.headers, text, json() { return JSON.parse(text); } };
     }
 
-    function events(type = null) {
-        return t.ctx.store.db.prepare('SELECT envelope FROM event_outbox ORDER BY id').all().map((r) => JSON.parse(r.envelope))
+    async function events(type = null) {
+        return (await t.ctx.store.db.prepare('SELECT envelope FROM event_outbox ORDER BY id').all()).map((r) => (typeof r.envelope === 'string' ? JSON.parse(r.envelope) : r.envelope))
             .filter((e) => !type || e.event_type === type || (type instanceof RegExp && type.test(e.event_type)));
     }
 
@@ -87,13 +90,13 @@ async function boot(opts = {}) {
         network, sources, clock, dbPath, editor, alice, bob, get, events, T0,
         csrf: (user) => require('../../server/auth/forms').csrfToken({ formSecret: env.TRADE_FORM_SECRET }, user),
         iso: (ms) => new Date(ms).toISOString(),
-        instrument(input) { return t.ctx.instruments.create({ kind: 'equity', ...input }, editor.subject); },
+        async instrument(input) { return await t.ctx.instruments.create({ kind: 'equity', ...input }, editor.subject); },
         /** Record an observation as a first-party feed would (domain call, recordedBy svc:feed). */
-        observe(instrument, input) {
-            return t.ctx.observations.record({ source_key: 'test-feed', unit: 'USD', currency: 'USD', ...input }, instrument, { recordedBy: 'svc:feed' });
+        async observe(instrument, input) {
+            return await t.ctx.observations.record({ source_key: 'test-feed', unit: 'USD', currency: 'USD', ...input }, instrument, { recordedBy: 'svc:feed' });
         },
         async restart() { await stop(); await start(); },
-        async close() { await stop(); await network.close(); await sources.close(); fs.rmSync(dir, { recursive: true, force: true }); },
+        async close() { await stop(); await testdb.close(); await network.close(); await sources.close(); fs.rmSync(dir, { recursive: true, force: true }); },
     };
     await start();
     return t;

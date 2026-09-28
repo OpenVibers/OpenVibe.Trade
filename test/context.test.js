@@ -13,9 +13,9 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
 
 (async () => {
     const t = await boot();
-    const acme = t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567' });
-    const { observation } = t.observe(acme, { metric: 'price.close', value: '10.50', source_ref: 'a', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
-    t.ctx.freshness.report('test-feed', { status: 'healthy', lastSuccessAt: t.T0, staleAfterSec: 86400 });
+    const acme = await t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567' });
+    const { observation } = await t.observe(acme, { metric: 'price.close', value: '10.50', source_ref: 'a', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
+    await t.ctx.freshness.report('test-feed', { status: 'healthy', lastSuccessAt: t.T0, staleAfterSec: 86400 });
     const ai = t.network.serviceToken('ai', ['trade.context.read', 'trade.context.propose']);
     let input;
 
@@ -60,14 +60,14 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(!page.text.includes('latest recorded close for ACME'), 'the draft is not shown to readers');
         assert.ok(page.text.includes('<meta name="robots" content="noindex, nofollow">'));
         assert.ok(!(await t.get('/sitemaps/instruments.xml')).text.includes('/i/ACME'));
-        assert.strictEqual(t.events('trade.index_document.upserted').length, 0);
+        assert.strictEqual((await t.events('trade.index_document.upserted')).length, 0);
     });
 
     await check('AI output cannot be published without a person, nor delivered as if by a person', async () => {
         const pub = await t.get(`/editor/i/ACME/context/${draftRev}/publish`, { as: t.editor, form: { _csrf: t.csrf(t.editor) } });
         assert.strictEqual(pub.status, 303);
         assert.ok(/review/i.test(errOf(pub)));
-        assert.strictEqual(t.ctx.instruments.bySymbol('ACME').context_published_revision, null);
+        assert.strictEqual((await t.ctx.instruments.bySymbol('ACME')).context_published_revision, null);
         const svcReview = await t.get(`/api/v1/instruments/ACME/context/revisions/${draftRev}/review`, { as: ai, json: { decision: 'approved' } });
         assert.strictEqual(svcReview.status, 403, 'a service cannot review');
         const noRun = await t.get('/api/v1/instruments/ACME/context', { as: ai, headers: { 'x-ov-origin': 'ai' }, json: { workflow: { id: 'trade.summarize_market_context' }, output: { summary: 'x' } } });
@@ -101,7 +101,7 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(page.text.includes('<meta name="robots" content="index, follow">'), page.text.match(/<meta name="robots"[^>]*>/)[0]);
         const sm = (await t.get('/sitemaps/instruments.xml')).text;
         assert.ok(sm.includes('https://openvibe.trade/i/ACME'));
-        const up = t.events('trade.index_document.upserted');
+        const up = await t.events('trade.index_document.upserted');
         assert.strictEqual(up.length, 1);
         assert.strictEqual(up[0].payload.authorship, 'ai_generated');
         assert.strictEqual(up[0].payload.visibility, 'public');
@@ -110,7 +110,7 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
     });
 
     await check('an editor writes human context with a plain form; a stale base is refused without losing the published text', async () => {
-        const head = t.ctx.context.head(t.ctx.instruments.bySymbol('ACME')).number;
+        const head = (await t.ctx.context.head(await t.ctx.instruments.bySymbol('ACME'))).number;
         const ok = await t.get('/editor/i/ACME/context', { as: t.editor, form: { _csrf: t.csrf(t.editor), body: `Acme filed nothing new this week. ${WORDS(70)}`, expected_revision: String(head), cite: `observation:${observation.id}`, publish: '1' } });
         assert.strictEqual(ok.status, 303);
         assert.ok(/n=context_published/.test(ok.headers.get('location')));
@@ -126,7 +126,7 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         const r = await t.get('/editor/i/ACME/context/retract', { as: t.editor, form: { _csrf: t.csrf(t.editor) } });
         assert.strictEqual(r.status, 303);
         assert.ok(!(await t.get('/sitemaps/instruments.xml')).text.includes('/i/ACME'));
-        assert.strictEqual(t.events('trade.index_document.deleted').length, 1);
+        assert.strictEqual((await t.events('trade.index_document.deleted')).length, 1);
     });
 
     await check('the editor is for editors only; its pages are private and noindex', async () => {
@@ -138,7 +138,7 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.strictEqual(e.headers.get('x-robots-tag'), 'noindex, nofollow');
         const add = await t.get('/editor/instruments', { as: t.editor, form: { _csrf: t.csrf(t.editor), symbol: 'nwco', name: 'New Co', kind: 'equity', cik: '' } });
         assert.strictEqual(add.status, 303);
-        assert.ok(t.ctx.instruments.bySymbol('NWCO'));
+        assert.ok(await t.ctx.instruments.bySymbol('NWCO'));
     });
 
     await t.close();

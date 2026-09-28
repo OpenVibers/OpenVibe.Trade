@@ -9,7 +9,7 @@ const { boot, check, done } = require('./helpers/boot');
 (async () => {
     const t = await boot();
     const feed = t.network.serviceToken('feed', ['trade.observation.write']);
-    const acme = t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567' });
+    const acme = await t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567' });
 
     await check('an instrument without observations shows no number, in HTML and JSON', async () => {
         const page = await t.get('/i/ACME');
@@ -32,7 +32,7 @@ const { boot, check, done } = require('./helpers/boot');
         assert.strictEqual(future.status, 422);
         const noValue = await t.get('/api/v1/observations', { as: feed, json: { symbol: 'ACME', metric: 'price.close', value: 'about ten', unit: 'USD', source_key: 'test-feed', source_ref: 'r1', observed_at: t.iso(t.T0), retrieved_at: t.iso(t.T0) } });
         assert.strictEqual(noValue.status, 422);
-        assert.strictEqual(t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations').get().n, 0);
+        assert.strictEqual((await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations').get()).n, 0);
     });
 
     await check('only a service with trade.observation.write records observations; people cannot', async () => {
@@ -61,7 +61,7 @@ const { boot, check, done } = require('./helpers/boot');
         assert.strictEqual(json.observations.length, 1);
         for (const k of ['observed_at', 'retrieved_at', 'recorded_at']) assert.ok(json.observations[0][k], k);
         assert.ok(json.observations[0].freshness, 'every observation carries its freshness');
-        const ev = t.events('trade.observation.created');
+        const ev = await t.events('trade.observation.created');
         assert.strictEqual(ev.length, 1);
         assert.strictEqual(ev[0].payload.observed_at, '2026-09-22T11:59:00.000Z');
         assert.strictEqual(ev[0].payload.retrieved_at, '2026-09-22T12:00:00.000Z');
@@ -74,16 +74,16 @@ const { boot, check, done } = require('./helpers/boot');
         assert.strictEqual(same.json().observation.id, obsId);
         const diff = await t.get('/api/v1/observations', { as: feed, json: { symbol: 'ACME', metric: 'price.close', value: '11', unit: 'USD', currency: 'USD', source_key: 'test-feed', source_ref: 'r1', observed_at: '2026-09-22T11:59:00Z', retrieved_at: '2026-09-22T12:00:00Z' } });
         assert.strictEqual(diff.status, 409);
-        assert.strictEqual(t.events('trade.observation.created').length, 1);
+        assert.strictEqual((await t.events('trade.observation.created')).length, 1);
     });
 
     await check('observations are immutable in the database', async () => {
-        assert.throws(() => t.ctx.store.db.prepare("UPDATE trade_market_observations SET value = '99' WHERE id = ?").run(obsId), /immutable/);
-        assert.throws(() => t.ctx.store.db.prepare('DELETE FROM trade_market_observations WHERE id = ?').run(obsId), /immutable/);
+        await assert.rejects(async () => await t.ctx.store.db.prepare("UPDATE trade_market_observations SET value = '99' WHERE id = ?").run(obsId), /immutable/);
+        await assert.rejects(async () => await t.ctx.store.db.prepare('DELETE FROM trade_market_observations WHERE id = ?').run(obsId), /immutable/);
     });
 
     await check('history keeps every observation, newest first, each with its timestamps', async () => {
-        t.observe(acme, { metric: 'price.close', value: '10.75', source_ref: 'r2', observed_at: '2026-09-22T12:01:00Z', retrieved_at: '2026-09-22T12:02:00Z' });
+        await t.observe(acme, { metric: 'price.close', value: '10.75', source_ref: 'r2', observed_at: '2026-09-22T12:01:00Z', retrieved_at: '2026-09-22T12:02:00Z' });
         const h = (await t.get('/api/v1/instruments/ACME/observations?metric=price.close')).json();
         assert.deepStrictEqual(h.observations.map((o) => o.value), ['10.75', '10.50']);
         const latest = (await t.get('/i/ACME.json')).json().observations;

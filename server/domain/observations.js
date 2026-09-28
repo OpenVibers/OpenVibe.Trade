@@ -35,10 +35,10 @@ function createObservations({ store, ctx }) {
                             VALUES (@id, @instrument_id, @metric, @value, @value_num, @unit, @currency, @period, @observed_at,
                             @source_key, @source_item_id, @source_url, @source_ref, @retrieved_at, @max_age_sec, @recorded_by, @recorded_at)`),
         latest: db.prepare(`SELECT * FROM (
-                              SELECT o.*, ROW_NUMBER() OVER (PARTITION BY metric, unit, IFNULL(currency, '') ORDER BY observed_at DESC, recorded_at DESC, id DESC) AS rn
-                                FROM trade_market_observations o WHERE instrument_id = ?)
+                              SELECT o.*, ROW_NUMBER() OVER (PARTITION BY metric, unit, COALESCE(currency, '') ORDER BY observed_at DESC, recorded_at DESC, id DESC) AS rn
+                                FROM trade_market_observations o WHERE instrument_id = ?) latest
                             WHERE rn = 1 ORDER BY metric, unit`),
-        history: db.prepare(`SELECT * FROM trade_market_observations WHERE instrument_id = ? AND (@metric IS NULL OR metric = @metric)
+        history: db.prepare(`SELECT * FROM trade_market_observations WHERE instrument_id = @instrument AND (@metric::text IS NULL OR metric = @metric)
                              AND observed_at < @before ORDER BY observed_at DESC, recorded_at DESC LIMIT @limit`),
         count: db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations WHERE instrument_id = ?'),
     };
@@ -79,48 +79,48 @@ function createObservations({ store, ctx }) {
         && (a.currency || null) === (b.currency || null) && a.observed_at === b.observed_at;
 
     const api = {
-        get: (id) => q.byId.get(id) || null,
-        count: (instrument) => q.count.get(instrument.id).n,
-        latest: (instrument) => q.latest.all(instrument.id),
-        history(instrument, { metric = null, before = null, limit = 50 } = {}) {
+        get: async (id) => await q.byId.get(id) || null,
+        count: async (instrument) => (await q.count.get(instrument.id)).n,
+        latest: async (instrument) => await q.latest.all(instrument.id),
+        async history(instrument, { metric = null, before = null, limit = 50 } = {}) {
             const b = parseTime(before);
-            return q.history.all(instrument.id, { metric, before: b == null ? Number.MAX_SAFE_INTEGER : b, limit: Math.min(Math.max(Number(limit) || 50, 1), 500) });
+            return await q.history.all({ instrument: instrument.id, metric: metric == null ? null : metric, before: b == null ? Number.MAX_SAFE_INTEGER : b, limit: Math.min(Math.max(Number(limit) || 50, 1), 500) });
         },
 
         /**
          * → { observation, created }. recordedBy: 'svc:…' or 'usr_…' (who recorded it here).
          */
-        record(input, instrument, { recordedBy, traceparent } = {}) {
+        async record(input, instrument, { recordedBy, traceparent } = {}) {
             if (!instrument || instrument.status !== 'active') throw new ApiError(404, 'instrument.not_found', 'No such active instrument');
             if (!recordedBy) throw new TypeError('recordedBy is required');
             const row = validate(input || {}, instrument);
-            return store.tx(() => {
-                const existing = q.byRef.get(row.source_key, row.source_ref);
+            return await store.tx(async () => {
+                const existing = await q.byRef.get(row.source_key, row.source_ref);
                 if (existing) {
                     if (same(existing, row)) return { observation: existing, created: false };
                     throw new ApiError(409, 'observation.conflict', 'This source reference already recorded a different value; a correction needs its own source_ref');
                 }
                 const id = newId('obs', store.now());
-                q.insert.run({ id, ...row, recorded_by: recordedBy, recorded_at: store.now() });
-                const obs = q.byId.get(id);
-                ctx.outbox.emit({
+                await q.insert.run({ id, ...row, recorded_by: recordedBy, recorded_at: store.now() });
+                const obs = await q.byId.get(id);
+                await ctx.outbox.emit({
                     event_type: 'trade.observation.created', actor: actorOf(recordedBy), visibility: 'public', priority: 'low',
                     subject: { type: 'observation', id },
                     payload: {
                         instrument: { id: instrument.id, symbol: instrument.symbol },
-                        ...api.dto(obs, { withFreshness: false }),
+                        ...await api.dto(obs, { withFreshness: false }),
                     },
                 }, { traceparent });
-                ctx.freshness.noteRetrieval(obs.source_key, obs.retrieved_at);
-                ctx.alerts.onObservation(obs, instrument, { traceparent });
-                ctx.indexing.refresh(instrument, { traceparent });
+                await ctx.freshness.noteRetrieval(obs.source_key, obs.retrieved_at);
+                await ctx.alerts.onObservation(obs, instrument, { traceparent });
+                await ctx.indexing.refresh(instrument, { traceparent });
                 return { observation: obs, created: true };
             });
         },
 
         /** Is this observation stale at `now`? Its source's freshness, and its own max age. */
-        staleness(obs, now = store.now()) {
-            const src = ctx.freshness.view(obs.source_key, now);
+        async staleness(obs, now = store.now()) {
+            const src = await ctx.freshness.view(obs.source_key, now);
             const own = obs.max_age_sec ? obs.observed_at + obs.max_age_sec * 1000 : null;
             const ownStale = own != null && now > own;
             const candidates = [];
@@ -134,7 +134,7 @@ function createObservations({ store, ctx }) {
             };
         },
 
-        dto(obs, { withFreshness = true, now = store.now() } = {}) {
+        async dto(obs, { withFreshness = true, now = store.now() } = {}) {
             const out = {
                 id: obs.id, metric: obs.metric, value: obs.value, unit: obs.unit, currency: obs.currency, period: obs.period,
                 observed_at: iso(obs.observed_at), retrieved_at: iso(obs.retrieved_at), recorded_at: iso(obs.recorded_at),
@@ -142,7 +142,7 @@ function createObservations({ store, ctx }) {
                 source: { key: obs.source_key, item_id: obs.source_item_id, url: obs.source_url, ref: obs.source_ref },
             };
             if (withFreshness) {
-                const s = api.staleness(obs, now);
+                const s = await api.staleness(obs, now);
                 out.freshness = { stale: s.stale, stale_since: s.stale_since, reason: s.reason, source_status: s.source.status, source_last_success_at: s.source.last_success_at };
             }
             return out;

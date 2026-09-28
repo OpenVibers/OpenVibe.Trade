@@ -17,26 +17,26 @@ function createReading({ store, ctx }) {
     }
 
     /** Everything the instrument page shows. docsPage: { limit, offset }. */
-    function instrument(i, { limit = 25, offset = 0 } = {}) {
+    async function instrument(i, { limit = 25, offset = 0 } = {}) {
         const now = store.now();
-        const observations = ctx.observations.latest(i).map((o) => ctx.observations.dto(o, { now }));
-        const docs = ctx.documents.forInstrument(i, { limit, offset }).map((d) => {
+        const observations = (await Promise.all((await ctx.observations.latest(i)).map(async (o) => await ctx.observations.dto(o, { now }))));
+        const docs = (await Promise.all((await ctx.documents.forInstrument(i, { limit, offset })).map(async (d) => {
             const dto = ctx.documents.dto(d);
-            const f = ctx.freshness.view(d.source_key, now);
+            const f = await ctx.freshness.view(d.source_key, now);
             dto.freshness = { stale: f.stale, stale_since: f.stale_since, reason: !f.known ? 'source_unknown' : f.stale ? 'source_stale' : null };
             return dto;
-        });
+        })));
         const keys = [...new Set([...observations.map((o) => o.source.key), ...docs.map((d) => d.source.key)])];
-        const sources = keys.sort().map((k) => ctx.freshness.view(k, now));
-        const decision = ctx.indexing.decide(i, now);
+        const sources = (await Promise.all(keys.sort().map(async (k) => await ctx.freshness.view(k, now))));
+        const decision = await ctx.indexing.decide(i, now);
         return {
             instrument: instrumentDto(i),
-            aliases: ctx.instruments.aliases(i).map((a) => ({ kind: a.kind, value: a.value, normalized: a.normalized })),
+            aliases: (await ctx.instruments.aliases(i)).map((a) => ({ kind: a.kind, value: a.value, normalized: a.normalized })),
             observations,
             documents: docs,
-            documents_total: ctx.documents.count(i),
+            documents_total: await ctx.documents.count(i),
             sources,
-            context: ctx.context.published(i),
+            context: await ctx.context.published(i),
             indexability: { indexable: decision.indexable, robots: decision.robots, reasons: decision.reasons },
             disclaimer: DISCLAIMER,
             generated_at: iso(now),

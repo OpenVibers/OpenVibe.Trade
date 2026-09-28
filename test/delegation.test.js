@@ -15,7 +15,7 @@ const MOD = 'mod:mod_01J8ZQ4Y7N3M2K1H0G9F8E7D6C';
     const t = await boot();
     const caps = ['trade.watchlist.read', 'trade.watchlist.create'];
     const token = (sub, actorType, extra) => t.network.signService({ sub, actorType, aud: ['openvibe.trade'], cap: caps, extra });
-    const secret = t.ctx.watchlists.create(t.alice.subject, { name: 'Alice secret plans' });
+    const secret = await t.ctx.watchlists.create(t.alice.subject, { name: 'Alice secret plans' });
 
     await check('an app or module cannot read or write someone else\'s watchlists by naming them in X-OV-Subject', async () => {
         for (const [sub, type] of [[APP, 'app'], [MOD, 'mod']]) {
@@ -30,7 +30,7 @@ const MOD = 'mod:mod_01J8ZQ4Y7N3M2K1H0G9F8E7D6C';
                 assert.strictEqual(write.status, 403);
             }
         }
-        assert.deepStrictEqual(t.ctx.watchlists.forOwner(t.alice.subject).map((w) => w.name), ['Alice secret plans']);
+        assert.deepStrictEqual((await t.ctx.watchlists.forOwner(t.alice.subject)).map((w) => w.name), ['Alice secret plans']);
     });
 
     await check('an app acts for its on_behalf_of person (the header is optional and must match)', async () => {

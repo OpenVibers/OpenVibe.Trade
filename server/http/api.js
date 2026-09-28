@@ -76,8 +76,8 @@ function createApi(ctx) {
 
     const tp = (req) => ({ traceparent: req.ov && req.ov.traceparent });
 
-    function mustInstrument(req) {
-        const i = instruments.bySymbol(req.params.symbol);
+    async function mustInstrument(req) {
+        const i = await instruments.bySymbol(req.params.symbol);
         if (!i) throw new ApiError(404, 'instrument.not_found', 'No such instrument');
         return i;
     }
@@ -103,14 +103,14 @@ function createApi(ctx) {
 
     // ── Instruments ─────────────────────────────────────────
 
-    define(router, 'get', '/instruments', 'getInstruments', run((req) => {
+    define(router, 'get', '/instruments', 'getInstruments', run(async (req) => {
         const { limit, offset } = paging(req);
-        const page = instruments.page({ limit, offset });
+        const page = await instruments.page({ limit, offset });
         return { total: page.total, instruments: page.instruments.map(reading.instrumentDto), disclaimer: DISCLAIMER };
     }));
 
-    define(router, 'get', '/instruments/resolve', 'resolveInstrument', guard(C.INSTRUMENT_RESOLVE), run((req) => {
-        const r = instruments.resolve(req.query.q, { kind: req.query.kind || null });
+    define(router, 'get', '/instruments/resolve', 'resolveInstrument', guard(C.INSTRUMENT_RESOLVE), run(async (req) => {
+        const r = await instruments.resolve(req.query.q, { kind: req.query.kind || null });
         return {
             query: r.query, status: r.status, match: r.match,
             instrument: r.instrument ? reading.instrumentDto(r.instrument) : null,
@@ -118,130 +118,130 @@ function createApi(ctx) {
         };
     }));
 
-    define(router, 'post', '/instruments', 'createInstrument', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run((req) => {
+    define(router, 'post', '/instruments', 'createInstrument', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run(async (req) => {
         mustEditor(req);
         const by = req.viewer.kind === 'service' ? req.viewer.service : req.viewer.subject;
-        const i = instruments.create(req.body || {}, by);
-        store.tx(() => indexing.refresh(i, tp(req)));
-        return { instrument: reading.instrumentDto(i), aliases: instruments.aliases(i) };
+        const i = await instruments.create(req.body || {}, by);
+        await store.tx(async () => await indexing.refresh(i, tp(req)));
+        return { instrument: reading.instrumentDto(i), aliases: await instruments.aliases(i) };
     }, 201));
 
-    define(router, 'get', '/instruments/:symbol', 'getInstrument', run((req) => {
-        const { decision, ...data } = reading.instrument(mustInstrument(req), paging(req, 25, 100));
+    define(router, 'get', '/instruments/:symbol', 'getInstrument', run(async (req) => {
+        const { decision, ...data } = await reading.instrument(await mustInstrument(req), paging(req, 25, 100));
         return data;
     }));
 
-    define(router, 'patch', '/instruments/:symbol', 'updateInstrument', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run((req) => {
+    define(router, 'patch', '/instruments/:symbol', 'updateInstrument', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run(async (req) => {
         mustEditor(req);
-        const i = instruments.update(mustInstrument(req), req.body || {});
-        store.tx(() => indexing.refresh(i, tp(req)));
+        const i = await instruments.update(await mustInstrument(req), req.body || {});
+        await store.tx(async () => await indexing.refresh(i, tp(req)));
         return { instrument: reading.instrumentDto(i) };
     }));
 
-    define(router, 'post', '/instruments/:symbol/aliases', 'addInstrumentAlias', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run((req) => {
+    define(router, 'post', '/instruments/:symbol/aliases', 'addInstrumentAlias', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run(async (req) => {
         mustEditor(req);
-        const i = mustInstrument(req);
+        const i = await mustInstrument(req);
         const b = req.body || {};
-        const alias = instruments.addAlias(i, String(b.kind || ''), b.value, req.viewer.kind === 'service' ? req.viewer.service : req.viewer.subject);
-        return { alias, aliases: instruments.aliases(i) };
+        const alias = await instruments.addAlias(i, String(b.kind || ''), b.value, req.viewer.kind === 'service' ? req.viewer.service : req.viewer.subject);
+        return { alias, aliases: await instruments.aliases(i) };
     }, 201));
 
-    define(router, 'get', '/instruments/:symbol/observations', 'getObservations', run((req) => {
-        const i = mustInstrument(req);
-        const list = observations.history(i, { metric: req.query.metric || null, before: req.query.before || null, limit: req.query.limit });
-        return { instrument: reading.instrumentDto(i), observations: list.map((o) => observations.dto(o)), disclaimer: DISCLAIMER };
+    define(router, 'get', '/instruments/:symbol/observations', 'getObservations', run(async (req) => {
+        const i = await mustInstrument(req);
+        const list = await observations.history(i, { metric: req.query.metric || null, before: req.query.before || null, limit: req.query.limit });
+        return { instrument: reading.instrumentDto(i), observations: (await Promise.all(list.map(async (o) => await observations.dto(o)))), disclaimer: DISCLAIMER };
     }));
 
-    define(router, 'get', '/instruments/:symbol/documents', 'getDocuments', run((req) => {
-        const i = mustInstrument(req);
-        return { instrument: reading.instrumentDto(i), total: documents.count(i), documents: documents.forInstrument(i, paging(req)).map(documents.dto) };
+    define(router, 'get', '/instruments/:symbol/documents', 'getDocuments', run(async (req) => {
+        const i = await mustInstrument(req);
+        return { instrument: reading.instrumentDto(i), total: await documents.count(i), documents: (await documents.forInstrument(i, paging(req))).map(documents.dto) };
     }));
 
     // ── Observations (first-party feeds) ────────────────────
 
-    define(router, 'post', '/observations', 'recordObservation', guard(C.OBSERVATION_WRITE), B('trade.observation.write'), jsonBody, run((req) => {
+    define(router, 'post', '/observations', 'recordObservation', guard(C.OBSERVATION_WRITE), B('trade.observation.write'), jsonBody, run(async (req) => {
         if (req.viewer.kind !== 'service') throw new ApiError(403, 'observation.services_only', 'Observations come from sources, recorded by a service with trade.observation.write');
         const b = req.body || {};
-        const instrument = b.instrument_id ? instruments.get(String(b.instrument_id)) : instruments.bySymbol(b.symbol);
+        const instrument = b.instrument_id ? await instruments.get(String(b.instrument_id)) : await instruments.bySymbol(b.symbol);
         if (!instrument) throw new ApiError(404, 'instrument.not_found', 'No such instrument (symbol or instrument_id)');
-        const out = observations.record(b, instrument, { recordedBy: req.viewer.service, ...tp(req) });
+        const out = await observations.record(b, instrument, { recordedBy: req.viewer.service, ...tp(req) });
         ctx.outbox.kick();
-        return { observation: observations.dto(out.observation), created: out.created };
+        return { observation: await observations.dto(out.observation), created: out.created };
     }, (out) => (out.created ? 201 : 200)));
 
     // ── Context ─────────────────────────────────────────────
 
-    define(router, 'get', '/instruments/:symbol/context', 'getContext', guard(C.CONTEXT_READ), run((req) => {
-        const i = mustInstrument(req);
-        const out = { instrument: reading.instrumentDto(i), published: context.published(i), disclaimer: DISCLAIMER };
+    define(router, 'get', '/instruments/:symbol/context', 'getContext', guard(C.CONTEXT_READ), run(async (req) => {
+        const i = await mustInstrument(req);
+        const out = { instrument: reading.instrumentDto(i), published: await context.published(i), disclaimer: DISCLAIMER };
         if (req.query.all === '1') {
             const v = req.viewer;
             if (!(v.kind === 'service' || (v.kind === 'user' && v.editor))) throw new ApiError(403, 'editor.forbidden', 'Only Trade editors see drafts');
-            out.pending = context.pending(i);
+            out.pending = await context.pending(i);
         }
         return out;
     }));
 
-    define(router, 'get', '/instruments/:symbol/context/input', 'getContextInput', guard(C.CONTEXT_READ), run((req) => context.input(mustInstrument(req))));
+    define(router, 'get', '/instruments/:symbol/context/input', 'getContextInput', guard(C.CONTEXT_READ), run(async (req) => await context.input(await mustInstrument(req))));
 
-    define(router, 'post', '/instruments/:symbol/context', 'proposeContext', guard(C.CONTEXT_PROPOSE), B('trade.context.propose'), jsonBody, run((req) => {
-        const i = mustInstrument(req);
-        const out = context.propose(req.viewer, i, req.body || {});
+    define(router, 'post', '/instruments/:symbol/context', 'proposeContext', guard(C.CONTEXT_PROPOSE), B('trade.context.propose'), jsonBody, run(async (req) => {
+        const i = await mustInstrument(req);
+        const out = await context.propose(req.viewer, i, req.body || {});
         ctx.outbox.kick();
-        return { revision: context.view(ctx.instruments.get(i.id), out.revision), published: out.published };
+        return { revision: await context.view(await ctx.instruments.get(i.id), out.revision), published: out.published };
     }, 201));
 
-    define(router, 'post', '/instruments/:symbol/context/revisions/:n/review', 'reviewContext', B('trade.context.publish'), jsonBody, run((req) => {
-        const i = mustInstrument(req);
+    define(router, 'post', '/instruments/:symbol/context/revisions/:n/review', 'reviewContext', B('trade.context.publish'), jsonBody, run(async (req) => {
+        const i = await mustInstrument(req);
         const b = req.body || {};
-        const out = context.review(req.viewer, i, parseInt(req.params.n, 10), { decision: b.decision, note: b.note });
+        const out = await context.review(req.viewer, i, parseInt(req.params.n, 10), { decision: b.decision, note: b.note });
         ctx.outbox.kick();
         return out;
     }, 201));
 
     // ── Sources ─────────────────────────────────────────────
 
-    define(router, 'get', '/sources', 'getSourceFreshness', run(() => ({ sources: freshness.all(), sync: ctx.sync.state() })));
+    define(router, 'get', '/sources', 'getSourceFreshness', run(async () => ({ sources: await freshness.all(), sync: await ctx.sync.state() })));
 
     // ── Watchlists (private) ────────────────────────────────
 
-    define(router, 'get', '/watchlists', 'getWatchlists', guard(C.WATCHLIST_READ), run((req) => ({ watchlists: watchlists.forOwner(owner(req)).map((w) => watchlists.dto(w)) })));
+    define(router, 'get', '/watchlists', 'getWatchlists', guard(C.WATCHLIST_READ), run(async (req) => ({ watchlists: (await Promise.all((await watchlists.forOwner(owner(req))).map(async (w) => await watchlists.dto(w)))) })));
 
-    define(router, 'post', '/watchlists', 'createWatchlist', guard(C.WATCHLIST_CREATE), B('trade.watchlist.create'), jsonBody, run((req) => ({ watchlist: watchlists.dto(watchlists.create(owner(req), req.body || {})) }), 201));
+    define(router, 'post', '/watchlists', 'createWatchlist', guard(C.WATCHLIST_CREATE), B('trade.watchlist.create'), jsonBody, run(async (req) => ({ watchlist: await watchlists.dto(await watchlists.create(owner(req), req.body || {})) }), 201));
 
-    define(router, 'get', '/watchlists/:id', 'getWatchlist', guard(C.WATCHLIST_READ), run((req) => ({ watchlist: watchlists.dto(watchlists.mustOwn(owner(req), req.params.id)) })));
+    define(router, 'get', '/watchlists/:id', 'getWatchlist', guard(C.WATCHLIST_READ), run(async (req) => ({ watchlist: await watchlists.dto(await watchlists.mustOwn(owner(req), req.params.id)) })));
 
-    define(router, 'patch', '/watchlists/:id', 'renameWatchlist', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), jsonBody, run((req) => {
-        const w = watchlists.mustOwn(owner(req), req.params.id);
-        return { watchlist: watchlists.dto(watchlists.rename(w, req.body || {})) };
+    define(router, 'patch', '/watchlists/:id', 'renameWatchlist', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), jsonBody, run(async (req) => {
+        const w = await watchlists.mustOwn(owner(req), req.params.id);
+        return { watchlist: await watchlists.dto(await watchlists.rename(w, req.body || {})) };
     }));
 
-    define(router, 'put', '/watchlists/:id/items/:symbol', 'addWatchlistItem', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), jsonBody, run((req) => {
-        const w = watchlists.mustOwn(owner(req), req.params.id);
-        const added = watchlists.add(w, instruments.bySymbol(req.params.symbol), (req.body || {}).note);
-        return { added, watchlist: watchlists.dto(w) };
+    define(router, 'put', '/watchlists/:id/items/:symbol', 'addWatchlistItem', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), jsonBody, run(async (req) => {
+        const w = await watchlists.mustOwn(owner(req), req.params.id);
+        const added = await watchlists.add(w, await instruments.bySymbol(req.params.symbol), (req.body || {}).note);
+        return { added, watchlist: await watchlists.dto(w) };
     }));
 
-    define(router, 'delete', '/watchlists/:id/items/:symbol', 'removeWatchlistItem', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), run((req) => {
-        const w = watchlists.mustOwn(owner(req), req.params.id);
-        return { removed: watchlists.drop(w, instruments.bySymbol(req.params.symbol)), watchlist: watchlists.dto(w) };
+    define(router, 'delete', '/watchlists/:id/items/:symbol', 'removeWatchlistItem', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), run(async (req) => {
+        const w = await watchlists.mustOwn(owner(req), req.params.id);
+        return { removed: await watchlists.drop(w, await instruments.bySymbol(req.params.symbol)), watchlist: await watchlists.dto(w) };
     }));
 
-    define(router, 'delete', '/watchlists/:id', 'deleteWatchlist', guard(C.WATCHLIST_DELETE), B('trade.watchlist.update'), run((req) => ({ deleted: watchlists.remove(watchlists.mustOwn(owner(req), req.params.id)) })));
+    define(router, 'delete', '/watchlists/:id', 'deleteWatchlist', guard(C.WATCHLIST_DELETE), B('trade.watchlist.update'), run(async (req) => ({ deleted: await watchlists.remove(await watchlists.mustOwn(owner(req), req.params.id)) })));
 
     // ── Alerts (private) ────────────────────────────────────
 
-    define(router, 'get', '/alerts', 'getAlertRules', guard(C.ALERT_READ), run((req) => ({ rules: alerts.forOwner(owner(req)) })));
+    define(router, 'get', '/alerts', 'getAlertRules', guard(C.ALERT_READ), run(async (req) => ({ rules: await alerts.forOwner(owner(req)) })));
 
-    define(router, 'get', '/alerts/deliveries', 'getAlertDeliveries', guard(C.ALERT_READ), run((req) => ({ deliveries: alerts.deliveries(owner(req), req.query.limit) })));
+    define(router, 'get', '/alerts/deliveries', 'getAlertDeliveries', guard(C.ALERT_READ), run(async (req) => ({ deliveries: await alerts.deliveries(owner(req), req.query.limit) })));
 
-    define(router, 'post', '/alerts', 'createAlertRule', guard(C.ALERT_CREATE), B('trade.alert.create'), jsonBody, run((req) => {
+    define(router, 'post', '/alerts', 'createAlertRule', guard(C.ALERT_CREATE), B('trade.alert.create'), jsonBody, run(async (req) => {
         const b = req.body || {};
-        const rule = alerts.create(owner(req), instruments.bySymbol(b.symbol), b);
-        return { rule: alerts.dto(rule) };
+        const rule = await alerts.create(owner(req), await instruments.bySymbol(b.symbol), b);
+        return { rule: await alerts.dto(rule) };
     }, 201));
 
-    define(router, 'delete', '/alerts/:id', 'deleteAlertRule', guard(C.ALERT_DELETE), B('trade.alert.delete'), run((req) => ({ deleted: alerts.remove(owner(req), req.params.id) })));
+    define(router, 'delete', '/alerts/:id', 'deleteAlertRule', guard(C.ALERT_DELETE), B('trade.alert.delete'), run(async (req) => ({ deleted: await alerts.remove(owner(req), req.params.id) })));
 
     router.use(function apiNotFound(req, res) { contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }); });
     return router;

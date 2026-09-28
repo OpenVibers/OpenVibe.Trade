@@ -11,15 +11,14 @@
  * reads the items themselves from the Sources API.
  */
 const express = require('express');
-const { parseDelivery, createInbox } = require('openvibe-sdk/events');
+const { parseDelivery, createPgInbox } = require('openvibe-sdk/events');
 const { http } = require('openvibe-contracts');
 
 function createWebhook({ store, config, sync, log = console }) {
     const router = express.Router();
-    const inbox = createInbox(store.db, { now: store.now });
-    inbox.ensureSchema();
+    const inbox = createPgInbox(store.db, { now: store.now });   // idempotency_receipts: migrations/0001_initial.sql
 
-    router.post('/internal/events', express.raw({ type: '*/*', limit: '1mb' }), function receiveEventsDelivery(req, res) {
+    router.post('/internal/events', express.raw({ type: '*/*', limit: '1mb' }), async function receiveEventsDelivery(req, res, next) {
         if (!config.events.webhookSecret) return http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov });
         const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
         // Signature v2 only: HMAC over "<t>.<raw body>" with t within ±300 s; a v1-only (v2 stripped) or stale delivery is refused.
@@ -27,7 +26,8 @@ function createWebhook({ store, config, sync, log = console }) {
         if (!delivery) return http.sendProblem(res, 401, 'webhook.signature_invalid', { detail: 'The delivery signature does not verify', ctx: req.ov });
         const e = delivery.event;
         if (typeof e.event_id !== 'string' || typeof e.event_type !== 'string') return http.sendProblem(res, 400, 'webhook.malformed', { detail: 'Not an event envelope', ctx: req.ov });
-        const r = inbox.once('sources', e.event_id, () => true);
+        let r;
+        try { r = await inbox.once('sources', e.event_id, async () => true); } catch (err) { return next(err); }
         const wake = !r.duplicate && /^sources\.(item\.(created|updated|removed)|fetch\.failed)$/.test(e.event_type);
         if (wake) sync.run().catch((err) => log.warn('[Trade] sync after webhook failed:', err.message));
         res.status(200).json({ accepted: true, duplicate: r.duplicate, sync: wake });
