@@ -32,6 +32,9 @@ function createEditor(ctx) {
         next();
     }
     const form = [...common.signedInForm, requireEditor];
+    // Per-actor limits (http/actor-limits.js): each form names its budget, shared with the API route that
+    // does the same thing, checked once the session, form token and editor list are.
+    const B = (name) => ctx.limits.budget(name);
 
     function mustInstrument(req) {
         const i = instruments.bySymbol(req.params.symbol);
@@ -53,7 +56,7 @@ function createEditor(ctx) {
         common.page(req, res, { title: 'Editor', decision, personal: true, body: views.editorHome({ instruments: all, pending, csrf: common.csrf(req), notice: common.noticeOf(req), kinds: instruments.KINDS }) });
     });
 
-    define(router, 'post', '/editor/instruments', 'createInstrumentForm', ...form, (req, res) => {
+    define(router, 'post', '/editor/instruments', 'createInstrumentForm', ...form, B('trade.instrument.manage'), (req, res) => {
         try {
             const i = instruments.create(req.body, req.viewer.subject);
             ctx.store.tx(() => indexing.refresh(i));
@@ -75,7 +78,7 @@ function createEditor(ctx) {
         });
     });
 
-    define(router, 'post', '/editor/i/:symbol', 'saveInstrumentForm', ...form, (req, res) => {
+    define(router, 'post', '/editor/i/:symbol', 'saveInstrumentForm', ...form, B('trade.instrument.manage'), (req, res) => {
         try {
             const i = mustInstrument(req);
             const updated = instruments.update(i, { name: req.body.name, kind: req.body.kind, exchange: req.body.exchange, cik: req.body.cik, currency: req.body.currency, status: req.body.status });
@@ -84,7 +87,7 @@ function createEditor(ctx) {
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/aliases', 'addAliasForm', ...form, (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/aliases', 'addAliasForm', ...form, B('trade.instrument.manage'), (req, res) => {
         try {
             const i = mustInstrument(req);
             instruments.addAlias(i, String(req.body.kind || ''), req.body.value, req.viewer.subject);
@@ -92,7 +95,7 @@ function createEditor(ctx) {
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context', 'writeContextForm', ...form, (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context', 'writeContextForm', ...form, B('trade.context.propose'), (req, res) => {
         try {
             const i = mustInstrument(req);
             const raw = req.body.cite == null ? [] : Array.isArray(req.body.cite) ? req.body.cite : [req.body.cite];
@@ -105,7 +108,7 @@ function createEditor(ctx) {
         }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context/:n/review', 'reviewContextForm', ...form, (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context/:n/review', 'reviewContextForm', ...form, B('trade.context.publish'), (req, res) => {
         try {
             const i = mustInstrument(req);
             const decisionValue = req.body.decision === 'approved' ? 'approved' : 'rejected';
@@ -114,7 +117,7 @@ function createEditor(ctx) {
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context/:n/publish', 'publishContextForm', ...form, (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context/:n/publish', 'publishContextForm', ...form, B('trade.context.publish'), (req, res) => {
         try {
             const i = mustInstrument(req);
             context.publish(i, parseInt(req.params.n, 10));
@@ -122,7 +125,7 @@ function createEditor(ctx) {
         } catch (err) { fail(req, res, `/editor/i/${encodeURIComponent(req.params.symbol)}`, err); }
     });
 
-    define(router, 'post', '/editor/i/:symbol/context/retract', 'retractContextForm', ...form, (req, res) => {
+    define(router, 'post', '/editor/i/:symbol/context/retract', 'retractContextForm', ...form, B('trade.context.publish'), (req, res) => {
         try {
             const i = mustInstrument(req);
             context.retract(req.viewer, i);

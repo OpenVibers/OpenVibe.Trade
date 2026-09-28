@@ -8,6 +8,9 @@
  *   t.editor, t.alice, t.bob                // Network users (the editor is in TRADE_EDITORS)
  *   t.instrument({ symbol, name, cik })     // create an instrument through the domain (seed for tests)
  *   t.events(type)                          // parsed envelopes in event_outbox
+ *
+ * opts: env (overrides), clock, log (Trade's logger; default quiet), limitsNow (the per-actor limiter's
+ * clock; default the wall clock).
  */
 const fs = require('fs');
 const os = require('os');
@@ -49,7 +52,7 @@ async function boot(opts = {}) {
     let built = null;
     async function start() {
         const config = configLib.load(env);
-        built = createApp({ config, now: clock.now, log: quiet });
+        built = createApp({ config, now: clock.now, log: opts.log || quiet, limitsNow: opts.limitsNow });
         await built.ctx.auth.ensureKey();
         server = await new Promise((resolve) => { const s = http.createServer(built.app); s.listen(0, '127.0.0.1', () => resolve(s)); });
         t.base = `http://127.0.0.1:${server.address().port}`;

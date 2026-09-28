@@ -281,10 +281,40 @@ registry, atomically. A placeholder never counts as an implemented service.
 - **Webhook:** signature v2 only (HMAC over `<timestamp>.<raw body>`, timestamp within the replay
   window; a v1-only or stale delivery is refused), inbox per event id, host-local only (nginx returns 404).
 - **Abuse:** rate limits on `/auth`, private forms and `/api/v1`, in Express and in the nginx
-  reference; per-person limits of 20 watchlists × 200 instruments and 100 alert rules.
+  reference; per-actor limits (below); per-person limits of 20 watchlists × 200 instruments and 100
+  alert rules.
 - **Known gaps:** the advice filter is a phrase guard, not a guarantee (editors remain accountable);
   there is no market data source yet; Network does not consume `trade.alert.triggered` yet; Search
   documents exist only for instruments with reviewed context.
+
+### Per-actor limits
+
+`/api/v1` and the watchlist, alert and editor forms also limit who calls them, once `req.viewer` is
+resolved and a route's capability guard (for a form, the session and form token) passed, before any
+work: `server/http/actor-limits.js`, openvibe-sdk/limits, roadmap WS-R task 4. Counted: a person as
+`user:usr_…` (their own token or cookie, a first-party service naming them in `X-OV-Subject`, or an
+app's `on_behalf_of`); a service or app acting as itself (a feed, OpenVibe.AI) by its principal;
+anyone else by address. Signed-out reads keep only the per-address limit (many readers share a
+carrier or campus address), and a first-party service reading for itself is not counted on reads.
+Past a limit: `429` problem+json `rate_limited` with `Retry-After`, one log line and
+`trade_rate_limited_total{limit,window}`. A form and the API route that do the same thing share one
+budget.
+
+| Routes (API and form) | Per caller, a minute / an hour |
+|---|---|
+| Signed-in API reads | `TRADE_LIMITS_MINUTE` / `TRADE_LIMITS_HOUR` (120 / 3000) |
+| Instrument create, edit, aliases | 30 / 300 |
+| `POST /observations` (a feed) | 240 / 10 000 |
+| Context proposals and editor context revisions | 60 / 1200 |
+| Context review, publish, retract | 30 / 300 |
+| Watchlist create | 10 / 100 |
+| Watchlist rename, delete, add and remove items | 60 / 600 |
+| Alert create | 20 / 100 |
+| Alert delete | 60 / 600 |
+
+Never limited per actor: `/api/health`, `/api/ready`, `/release.json`, `/release-metrics`, `/metrics`,
+sign-in, the pages and feeds people read, and the signed Events deliveries at `/internal/events`.
+`test/actor-limits.test.js`.
 
 ## Development
 

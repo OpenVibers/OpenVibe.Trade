@@ -46,6 +46,7 @@ const { createPrivate } = require('./http/private');
 const { createEditor } = require('./http/editor');
 const { createDiscovery } = require('./http/discovery');
 const { createApi } = require('./http/api');
+const { createActorLimits } = require('./http/actor-limits');
 const { define } = require('./http/routes');
 const { createTradeReadiness } = require('./observability');
 const { createWorker } = require('./worker');
@@ -54,7 +55,8 @@ const { assetVersion } = require('./render/layout');
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const VERSION = require('../package.json').version;
 
-/** opts: config, store | dbPath, now (clock), fetchImpl, auth (a createAuthClient-like object), log */
+/** opts: config, store | dbPath, now (clock), fetchImpl, auth (a createAuthClient-like object), log,
+ *  limitsNow (the per-actor limiter's clock, tests; default the wall clock) */
 function createApp(opts = {}) {
     const config = opts.config || configLib.load();
     const log = opts.log || console;
@@ -89,6 +91,9 @@ function createApp(opts = {}) {
     const metrics = require('openvibe-shared/metrics').instrument(app, { service: 'trade', release: release.release });
     app.locals.metrics = metrics.registry;
     app.locals.ctx = ctx;
+    // Per-actor limits (http/actor-limits.js) on /api/v1 and the forms, counted once each router resolved
+    // req.viewer; the per-address limits below stay.
+    ctx.limits = createActorLimits({ config, now: opts.limitsNow || (() => Date.now()), registry: metrics.registry, log });
 
     app.use(contracts.http.middleware());
     app.use(helmet({

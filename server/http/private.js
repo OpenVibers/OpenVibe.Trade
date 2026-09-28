@@ -23,6 +23,9 @@ const { asApiError } = require('./errors');
 function createPrivate(ctx) {
     const { instruments, watchlists, alerts, common } = ctx;
     const router = express.Router();
+    // Per-actor limits (http/actor-limits.js): each form names its budget, shared with the API route that
+    // does the same thing, checked once the session and form token are.
+    const B = (name) => ctx.limits.budget(name);
     const privateDecision = seo.evaluate({ state: 'published', visibility: 'private', canonicalUrl: null }, { policy: { minWords: 0 } });
 
     function back(req, res, fallback, err) {
@@ -50,28 +53,28 @@ function createPrivate(ctx) {
         });
     });
 
-    define(router, 'post', '/watchlists', 'createWatchlistForm', ...common.signedInForm, (req, res) => {
+    define(router, 'post', '/watchlists', 'createWatchlistForm', ...common.signedInForm, B('trade.watchlist.create'), (req, res) => {
         try {
             watchlists.create(req.viewer.subject, { name: req.body.name });
             common.after(res, '/watchlists', { n: 'watchlist_created' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/rename', 'renameWatchlistForm', ...common.signedInForm, (req, res) => {
+    define(router, 'post', '/watchlists/rename', 'renameWatchlistForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
         try {
             watchlists.rename(watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id), { name: req.body.name });
             common.after(res, '/watchlists', { n: 'watchlist_renamed' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/delete', 'deleteWatchlistForm', ...common.signedInForm, (req, res) => {
+    define(router, 'post', '/watchlists/delete', 'deleteWatchlistForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
         try {
             watchlists.remove(watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id));
             common.after(res, '/watchlists', { n: 'watchlist_deleted' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/item', 'addWatchlistItemForm', ...common.signedInForm, (req, res) => {
+    define(router, 'post', '/watchlists/item', 'addWatchlistItemForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
         try {
             const w = watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id);
             const instrument = instrumentFrom(req.body);
@@ -81,7 +84,7 @@ function createPrivate(ctx) {
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/watchlists/item/remove', 'removeWatchlistItemForm', ...common.signedInForm, (req, res) => {
+    define(router, 'post', '/watchlists/item/remove', 'removeWatchlistItemForm', ...common.signedInForm, B('trade.watchlist.update'), (req, res) => {
         try {
             const w = watchlists.mustOwn(req.viewer.subject, req.body.watchlist_id);
             watchlists.drop(w, instruments.bySymbol(req.body.symbol));
@@ -89,7 +92,7 @@ function createPrivate(ctx) {
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 
-    define(router, 'post', '/alerts', 'createAlertForm', ...common.signedInForm, (req, res) => {
+    define(router, 'post', '/alerts', 'createAlertForm', ...common.signedInForm, B('trade.alert.create'), (req, res) => {
         const instrument = instruments.bySymbol(req.body.symbol);
         try {
             alerts.create(req.viewer.subject, instrument, {
@@ -104,7 +107,7 @@ function createPrivate(ctx) {
         }
     });
 
-    define(router, 'post', '/alerts/delete', 'deleteAlertForm', ...common.signedInForm, (req, res) => {
+    define(router, 'post', '/alerts/delete', 'deleteAlertForm', ...common.signedInForm, B('trade.alert.delete'), (req, res) => {
         try {
             alerts.remove(req.viewer.subject, String(req.body.rule_id || ''));
             common.after(res, '/watchlists', { n: 'alert_deleted' });

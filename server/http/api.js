@@ -68,6 +68,11 @@ function createApi(ctx) {
     router.use(cors(config.apiCorsOrigins));
     router.use(viewers.middleware());
     router.use(function privateApi(req, res, next) { privateNoStore(res); res.set('X-Robots-Tag', 'noindex'); next(); });
+    // Per-actor limits (http/actor-limits.js), once req.viewer is resolved: a signed-in person's or an
+    // app's reads take the defaults (signed-out reads keep the per-address limit only); each write below
+    // names its budget after its capability guard, before its body is read.
+    router.use(ctx.limits.reads('trade.read'));
+    const B = (name) => ctx.limits.budget(name);
 
     const tp = (req) => ({ traceparent: req.ov && req.ov.traceparent });
 
@@ -113,7 +118,7 @@ function createApi(ctx) {
         };
     }));
 
-    define(router, 'post', '/instruments', 'createInstrument', guard(C.INSTRUMENT_MANAGE), jsonBody, run((req) => {
+    define(router, 'post', '/instruments', 'createInstrument', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run((req) => {
         mustEditor(req);
         const by = req.viewer.kind === 'service' ? req.viewer.service : req.viewer.subject;
         const i = instruments.create(req.body || {}, by);
@@ -126,14 +131,14 @@ function createApi(ctx) {
         return data;
     }));
 
-    define(router, 'patch', '/instruments/:symbol', 'updateInstrument', guard(C.INSTRUMENT_MANAGE), jsonBody, run((req) => {
+    define(router, 'patch', '/instruments/:symbol', 'updateInstrument', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run((req) => {
         mustEditor(req);
         const i = instruments.update(mustInstrument(req), req.body || {});
         store.tx(() => indexing.refresh(i, tp(req)));
         return { instrument: reading.instrumentDto(i) };
     }));
 
-    define(router, 'post', '/instruments/:symbol/aliases', 'addInstrumentAlias', guard(C.INSTRUMENT_MANAGE), jsonBody, run((req) => {
+    define(router, 'post', '/instruments/:symbol/aliases', 'addInstrumentAlias', guard(C.INSTRUMENT_MANAGE), B('trade.instrument.manage'), jsonBody, run((req) => {
         mustEditor(req);
         const i = mustInstrument(req);
         const b = req.body || {};
@@ -154,7 +159,7 @@ function createApi(ctx) {
 
     // ── Observations (first-party feeds) ────────────────────
 
-    define(router, 'post', '/observations', 'recordObservation', guard(C.OBSERVATION_WRITE), jsonBody, run((req) => {
+    define(router, 'post', '/observations', 'recordObservation', guard(C.OBSERVATION_WRITE), B('trade.observation.write'), jsonBody, run((req) => {
         if (req.viewer.kind !== 'service') throw new ApiError(403, 'observation.services_only', 'Observations come from sources, recorded by a service with trade.observation.write');
         const b = req.body || {};
         const instrument = b.instrument_id ? instruments.get(String(b.instrument_id)) : instruments.bySymbol(b.symbol);
@@ -179,14 +184,14 @@ function createApi(ctx) {
 
     define(router, 'get', '/instruments/:symbol/context/input', 'getContextInput', guard(C.CONTEXT_READ), run((req) => context.input(mustInstrument(req))));
 
-    define(router, 'post', '/instruments/:symbol/context', 'proposeContext', guard(C.CONTEXT_PROPOSE), jsonBody, run((req) => {
+    define(router, 'post', '/instruments/:symbol/context', 'proposeContext', guard(C.CONTEXT_PROPOSE), B('trade.context.propose'), jsonBody, run((req) => {
         const i = mustInstrument(req);
         const out = context.propose(req.viewer, i, req.body || {});
         ctx.outbox.kick();
         return { revision: context.view(ctx.instruments.get(i.id), out.revision), published: out.published };
     }, 201));
 
-    define(router, 'post', '/instruments/:symbol/context/revisions/:n/review', 'reviewContext', jsonBody, run((req) => {
+    define(router, 'post', '/instruments/:symbol/context/revisions/:n/review', 'reviewContext', B('trade.context.publish'), jsonBody, run((req) => {
         const i = mustInstrument(req);
         const b = req.body || {};
         const out = context.review(req.viewer, i, parseInt(req.params.n, 10), { decision: b.decision, note: b.note });
@@ -202,27 +207,27 @@ function createApi(ctx) {
 
     define(router, 'get', '/watchlists', 'getWatchlists', guard(C.WATCHLIST_READ), run((req) => ({ watchlists: watchlists.forOwner(owner(req)).map((w) => watchlists.dto(w)) })));
 
-    define(router, 'post', '/watchlists', 'createWatchlist', guard(C.WATCHLIST_CREATE), jsonBody, run((req) => ({ watchlist: watchlists.dto(watchlists.create(owner(req), req.body || {})) }), 201));
+    define(router, 'post', '/watchlists', 'createWatchlist', guard(C.WATCHLIST_CREATE), B('trade.watchlist.create'), jsonBody, run((req) => ({ watchlist: watchlists.dto(watchlists.create(owner(req), req.body || {})) }), 201));
 
     define(router, 'get', '/watchlists/:id', 'getWatchlist', guard(C.WATCHLIST_READ), run((req) => ({ watchlist: watchlists.dto(watchlists.mustOwn(owner(req), req.params.id)) })));
 
-    define(router, 'patch', '/watchlists/:id', 'renameWatchlist', guard(C.WATCHLIST_UPDATE), jsonBody, run((req) => {
+    define(router, 'patch', '/watchlists/:id', 'renameWatchlist', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), jsonBody, run((req) => {
         const w = watchlists.mustOwn(owner(req), req.params.id);
         return { watchlist: watchlists.dto(watchlists.rename(w, req.body || {})) };
     }));
 
-    define(router, 'put', '/watchlists/:id/items/:symbol', 'addWatchlistItem', guard(C.WATCHLIST_UPDATE), jsonBody, run((req) => {
+    define(router, 'put', '/watchlists/:id/items/:symbol', 'addWatchlistItem', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), jsonBody, run((req) => {
         const w = watchlists.mustOwn(owner(req), req.params.id);
         const added = watchlists.add(w, instruments.bySymbol(req.params.symbol), (req.body || {}).note);
         return { added, watchlist: watchlists.dto(w) };
     }));
 
-    define(router, 'delete', '/watchlists/:id/items/:symbol', 'removeWatchlistItem', guard(C.WATCHLIST_UPDATE), run((req) => {
+    define(router, 'delete', '/watchlists/:id/items/:symbol', 'removeWatchlistItem', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), run((req) => {
         const w = watchlists.mustOwn(owner(req), req.params.id);
         return { removed: watchlists.drop(w, instruments.bySymbol(req.params.symbol)), watchlist: watchlists.dto(w) };
     }));
 
-    define(router, 'delete', '/watchlists/:id', 'deleteWatchlist', guard(C.WATCHLIST_DELETE), run((req) => ({ deleted: watchlists.remove(watchlists.mustOwn(owner(req), req.params.id)) })));
+    define(router, 'delete', '/watchlists/:id', 'deleteWatchlist', guard(C.WATCHLIST_DELETE), B('trade.watchlist.update'), run((req) => ({ deleted: watchlists.remove(watchlists.mustOwn(owner(req), req.params.id)) })));
 
     // ── Alerts (private) ────────────────────────────────────
 
@@ -230,13 +235,13 @@ function createApi(ctx) {
 
     define(router, 'get', '/alerts/deliveries', 'getAlertDeliveries', guard(C.ALERT_READ), run((req) => ({ deliveries: alerts.deliveries(owner(req), req.query.limit) })));
 
-    define(router, 'post', '/alerts', 'createAlertRule', guard(C.ALERT_CREATE), jsonBody, run((req) => {
+    define(router, 'post', '/alerts', 'createAlertRule', guard(C.ALERT_CREATE), B('trade.alert.create'), jsonBody, run((req) => {
         const b = req.body || {};
         const rule = alerts.create(owner(req), instruments.bySymbol(b.symbol), b);
         return { rule: alerts.dto(rule) };
     }, 201));
 
-    define(router, 'delete', '/alerts/:id', 'deleteAlertRule', guard(C.ALERT_DELETE), run((req) => ({ deleted: alerts.remove(owner(req), req.params.id) })));
+    define(router, 'delete', '/alerts/:id', 'deleteAlertRule', guard(C.ALERT_DELETE), B('trade.alert.delete'), run((req) => ({ deleted: alerts.remove(owner(req), req.params.id) })));
 
     router.use(function apiNotFound(req, res) { contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }); });
     return router;
