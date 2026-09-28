@@ -209,7 +209,7 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
 ## Depends on
 
 - **Packages** (pinned by release tarball): `openvibe-contracts` v0.49.0, `openvibe-publishing`
-  v0.4.0 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.22.0 (chrome, app icon,
+  v0.4.0 (revisions, authorship, seo, index-hooks, ssr), `openvibe-shared` v1.25.0 (chrome, app icon,
   footer, legal, release, metrics, ready), `openvibe-sdk` v0.12.0 (events outbox and inbox, webhook
   signatures v2, service tokens, per-actor limits).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
