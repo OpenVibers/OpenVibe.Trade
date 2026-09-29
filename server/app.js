@@ -108,6 +108,7 @@ async function createApp(opts = {}) {
     app.set('trust proxy', config.trustProxy);
     // metricsPath: open tabs report their update outcomes to POST /release-metrics (defined below).
     const release = require('openvibe-shared/release').createRelease({ service: 'trade', root: path.join(__dirname, '..'), metricsPath: '/release-metrics' });
+    require('./render/layout').setRelease(release.release);
     const metrics = require('openvibe-shared/metrics').instrument(app, { service: 'trade', release: release.release });
     app.locals.metrics = metrics.registry;
     app.locals.ctx = ctx;
