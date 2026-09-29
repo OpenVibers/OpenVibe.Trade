@@ -140,6 +140,17 @@ deployment has no instruments (editors add them), no documents until the source 
   fields only. No price, offer, rating or invented date.
 - Every instrument page has a JSON twin with the same data (`/i/:symbol.json`).
 
+### IndexNow (openvibe-shared/indexnow)
+
+- With `INDEXNOW_KEY` set, the key file is served at `/<key>.txt` as `text/plain`.
+- Whenever the gate's verdict for an instrument page changes — a person-reviewed context is published
+  or updated, the context is retracted, the instrument is archived, or a price ages past
+  `TRADE_PRICE_MAX_AGE_SEC` — Trade pings `api.indexnow.org` with the page's canonical URL and
+  `/sitemap.xml`; the module batches and debounces (one POST per 30s window). A failed ping never
+  takes a publish down.
+- Drafts, unreviewed AI context, private pages and noindex pages never ping. Unset key: off — no key
+  file, no requests.
+
 ### Caching (nothing personal in shared caches)
 
 - `public, max-age=60` only for pages identical for everyone, served to anonymous viewers.
@@ -250,6 +261,8 @@ Each grant is `[client, capability, audience]`:
 | AI output is a labelled draft, noindex until a person approves it; advice refused; editor forms; sitemap/Search follow publication. | `test/context.test.js` |
 | Sources mapping (SEC filings), deterministic resolution, cursor replay, removals, signed webhook with inbox. | `test/sync.test.js` |
 | Disclaimer on every page; no-JS pages; JSON twin = HTML; feeds without invented dates; robots/llms/sitemaps; readiness; the marketplace question is documented and nothing of it exists. | `test/pages.test.js` |
+| IndexNow: off without `INDEXNOW_KEY` (no key route, nothing sent); with one the key file is served at `/<key>.txt` as `text/plain` and publishing or retracting indexable context pings the instrument path and the sitemap; a draft never pings. | `test/indexnow.test.js` |
+| The home page's first load stays inside its size budgets (html/js/css, fresh database, no browser). | `test/perf-budget.test.js` |
 | Proposals valid against the released schemas and equal to what the code enforces and emits; every envelope valid. | `test/contracts.test.js` |
 
 ## Launch rule

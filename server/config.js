@@ -36,7 +36,8 @@ function load(env = process.env) {
         },
 
         // PostgreSQL (ADR-035): DATABASE_URL serves (PgBouncer), DATABASE_DIRECT_URL migrates (owner role).
-        db: { url: env.DATABASE_URL || '', directUrl: env.DATABASE_DIRECT_URL || '' },
+        // TRADE_PGLITE_DIR overrides the embedded dev database directory (tests: one of their own).
+        db: { url: env.DATABASE_URL || '', directUrl: env.DATABASE_DIRECT_URL || '', pgliteDir: env.TRADE_PGLITE_DIR || '' },
         valkey: { url: env.VALKEY_URL || '', prefix: env.VALKEY_PREFIX || 'ov:trade:' },
 
         // OpenVibe.Network: SSO (OAuth2 authorization server), JWKS, client-credentials tokens.
@@ -76,6 +77,11 @@ function load(env = process.env) {
         // Indexability policy for instrument pages (openvibe-publishing/seo gate). Financial pages
         // are a sensitive category: nothing is indexable before a person-reviewed context exists.
         gate: { minWords: Math.max(int(env.TRADE_GATE_MIN_WORDS, 60), 0) },
+
+        // IndexNow (openvibe-shared/indexnow): a key makes search engines recrawl an instrument page
+        // the moment it appears, changes or leaves the index (the key file is served at /<key>.txt).
+        // Unset → off: no key file, nothing sent. Tests and drills never set it.
+        indexnow: { key: String(env.INDEXNOW_KEY || '').trim() },
 
         // OpenVibe.Events: the outbox relay runs only when EVENTS_URL and the client secret are set.
         events: {

@@ -25,6 +25,7 @@ const contracts = require('openvibe-contracts');
 const { createSsoClient } = require('openvibe-sdk/sso');
 const { jwksClient } = require('openvibe-sdk/auth');
 const { createServiceOutbox } = require('openvibe-sdk/events');
+const { createIndexNow } = require('openvibe-shared/indexnow');
 
 const configLib = require('./config');
 const { openStore } = require('./db');
@@ -76,6 +77,12 @@ async function createApp(opts = {}) {
         intervalMs: config.events.intervalMs, now: store.now, log,
         ...(fetchImpl ? { fetch: fetchImpl } : {}),
     });
+    // IndexNow (openvibe-shared/indexnow): created once at boot from INDEXNOW_KEY. Unset → off, nothing
+    // mounted, nothing sent; tests and drills never set it.
+    const indexnow = opts.indexnow !== undefined ? opts.indexnow : createIndexNow({
+        host: config.baseUrl, key: config.indexnow.key, ...(fetchImpl ? { fetch: fetchImpl } : {}), log,
+    });
+    ctx.indexnow = indexnow;
     ctx.instruments = createInstruments({ store });
     ctx.freshness = createFreshness({ store, config, outbox: ctx.outbox });
     ctx.alerts = createAlerts({ store, config, ctx });
@@ -83,7 +90,7 @@ async function createApp(opts = {}) {
     ctx.documents = createDocuments({ store, ctx });
     ctx.watchlists = createWatchlists({ store, config, ctx });
     ctx.context = createContext({ store, config, ctx });
-    ctx.indexing = createIndexing({ store, config, ctx });
+    ctx.indexing = createIndexing({ store, config, ctx, indexnow });
     ctx.reading = createReading({ store, ctx });
     ctx.sources = opts.sourcesClient || createSourcesClient({ config, fetchImpl });
     ctx.sync = createSync({ store, config, ctx, sources: ctx.sources, log });
@@ -167,6 +174,9 @@ async function createApp(opts = {}) {
         define(legalRouter, 'get', legal.PATHS, 'legalPage', legal.handler({ id: 'trade', service: 'trade', host: 'openvibe.trade', name: 'OpenVibe.Trade', profile: 'information' }));
         app.use(legalRouter);
     }
+
+    // GET /<key>.txt — the IndexNow key file (mounted only when a key is configured; it serves itself).
+    if (indexnow.enabled) app.use(indexnow.keyFile);
 
     // ── Static assets (content-hashed ?v= → immutable) ──────
     // This site's own pinned copy of the OpenVibe Frame's browser files (openvibe-shared/serve).

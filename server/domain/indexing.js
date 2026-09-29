@@ -25,7 +25,7 @@ const ssr = require('openvibe-publishing/ssr');
 
 const OWNER = 'trade';
 
-function createIndexing({ store, config, ctx }) {
+function createIndexing({ store, config, ctx, indexnow }) {
     const { db } = store;
     const latestMonetary = db.prepare(`SELECT observed_at FROM trade_market_observations WHERE instrument_id = ? AND currency IS NOT NULL
                                        ORDER BY observed_at DESC LIMIT 1`);
@@ -87,6 +87,12 @@ function createIndexing({ store, config, ctx }) {
         if (doc.deleted && prev == null) return null;
         const stamped = await store.sequencer.stamp(store.db, doc);
         if (prev != null && stamped.revision === prev) return null;
+        // IndexNow: tell the engines a public, indexable instrument page appeared or changed — or
+        // that a page which was in the index left it (retracted, archived, stale price). Never for a
+        // page that was never indexable (a draft, private or noindex from the start).
+        if (indexnow && indexnow.enabled && (decision.indexable || prev != null)) {
+            indexnow.pingSoon([ctx.urls.instrument(instrument), ctx.urls.abs('/sitemap.xml')]);
+        }
         return await ctx.outbox.emit(hooks.indexEvent({ document: stamped, now: store.now() }), { traceparent });
     }
 
