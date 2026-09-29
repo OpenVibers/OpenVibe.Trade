@@ -9,7 +9,7 @@
  * A newly seen document is what new_document and filing_type alert rules trigger on (once per rule
  * and document: alerts.onDocument). Item revisions update the row and never trigger again.
  */
-const { newId, iso } = require('./util');
+const { newId, iso } = require('./helpers');
 
 function createDocuments({ store, ctx }) {
     const { db } = store;

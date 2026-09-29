@@ -23,7 +23,8 @@
  *
  * Also here: trade_context_drafts / trade_context_revision_purges / trade_context_reviews (package
  * companions), trade_index_revisions (Search document sequencer), trade_source_status (freshness
- * per source), trade_sync_state (the Sources cursor), event_outbox (SDK outbox) and
+ * per source), trade_ingest_cursor (the Sources change cursor, openvibe-publishing/ingest),
+ * trade_sync_state (the last sync error and counters), event_outbox (SDK outbox) and
  * idempotency_receipts (SDK inbox for signed webhook deliveries).
  */
 const fs = require('fs');

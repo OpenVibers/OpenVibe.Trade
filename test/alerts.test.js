@@ -94,7 +94,7 @@ const MIN = 60e3;
         assert.strictEqual((await bobs()).length, 1, 'new_document fired, filing_type(8-K) did not for a 10-Q');
         t.sources.putItem({ id: item.id, canonical_url: url, title: 'ACME CORP (amended title)', summary: '10-Q', published_at: iso(t.T0), retrieved_at: iso(t.clock.now()) });
         await t.ctx.sync.run();
-        await t.ctx.store.db.prepare("UPDATE trade_sync_state SET cursor = 0 WHERE name = 'sources.trade'").run();
+        await t.ctx.store.db.prepare("UPDATE trade_ingest_cursor SET cursor = 0 WHERE name = 'sources.trade'").run();
         await t.ctx.sync.run();
         assert.strictEqual((await bobs()).length, 1, 'item revision and page replay: no second delivery');
         assert.strictEqual((await t.get('/i/ACME.json')).json().documents[0].title, 'ACME CORP (amended title)');

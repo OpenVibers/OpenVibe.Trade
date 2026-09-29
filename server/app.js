@@ -9,7 +9,7 @@
  *   Editor (http/editor.js)        /editor/…
  *   Discovery (http/discovery.js)  robots, llms, sitemaps, feeds
  *   API (http/api.js)              /api/v1/…
- *   Webhook (events/webhook.js)    POST /internal/events (signed OpenVibe.Events deliveries)
+ *   Webhook (events/consumer.js)  POST /internal/events (signed OpenVibe.Events deliveries)
  *   Machine                        /api/health, /api/ready, /release.json, /metrics
  *
  * Information only (ADR-025): no route takes an order, holds value, runs escrow, lists goods
@@ -26,14 +26,15 @@ const { createSsoClient } = require('openvibe-sdk/sso');
 const { jwksClient } = require('openvibe-sdk/auth');
 const { createServiceOutbox } = require('openvibe-sdk/events');
 const { createIndexNow } = require('openvibe-shared/indexnow');
+const { createSourcesClient } = require('openvibe-publishing/ingest');
 
 const configLib = require('./config');
 const { openStore } = require('./db');
 const { createViewerResolver } = require('./auth/viewer');
-const { createWebhook } = require('./events/webhook');
+const { createWebhook } = require('./events/consumer');
 const { createUrls } = require('./domain/urls');
 const { createInstruments } = require('./domain/instruments');
-const { createFreshness } = require('./domain/freshness');
+const { createFreshness } = require('./domain/source-status');
 const { createObservations } = require('./domain/observations');
 const { createDocuments } = require('./domain/documents');
 const { createAlerts } = require('./domain/alerts');
@@ -41,8 +42,7 @@ const { createWatchlists } = require('./domain/watchlists');
 const { createContext } = require('./domain/context');
 const { createIndexing } = require('./domain/indexing');
 const { createReading } = require('./domain/reading');
-const { createSync } = require('./domain/sync');
-const { createSourcesClient } = require('./clients/sources');
+const { createIngest } = require('./domain/ingest');
 const { createCommon } = require('./http/common');
 const { createPages } = require('./http/pages');
 const { createPrivate } = require('./http/private');
@@ -92,8 +92,8 @@ async function createApp(opts = {}) {
     ctx.context = createContext({ store, config, ctx });
     ctx.indexing = createIndexing({ store, config, ctx, indexnow });
     ctx.reading = createReading({ store, ctx });
-    ctx.sources = opts.sourcesClient || createSourcesClient({ config, fetchImpl });
-    ctx.sync = createSync({ store, config, ctx, sources: ctx.sources, log });
+    ctx.sources = opts.sourcesClient || createSourcesClient({ config, fetchImpl, timeoutMs: 15_000 });
+    ctx.sync = createIngest({ store, config, ctx, sources: ctx.sources, log });
     // Sign-in with OpenVibe.Network (openvibe-sdk/sso): routes, offline session verification through the
     // shared JWKS client, state + PKCE. ctx.jwks is the same client viewer.js verifies service tokens with.
     ctx.jwksUrl = `${String(config.networkInternalUrl || config.networkUrl).replace(/\/+$/, '')}/api/.well-known/jwks`;
@@ -163,7 +163,7 @@ async function createApp(opts = {}) {
     app.use(machine);
 
     // ── Signed OpenVibe.Events deliveries (before any body parser) ──
-    app.use(createWebhook({ store, config, sync: ctx.sync, log }).router);
+    app.use(createWebhook({ store, config, ingest: ctx.sync, log }).router);
 
     // ── Sign-in (OAuth2 client of OpenVibe.Network) ─────────
     app.use('/auth/', rateLimit({ windowMs: 15 * 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));

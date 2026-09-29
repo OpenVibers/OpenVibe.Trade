@@ -7,7 +7,7 @@
  * an event, and every response that shows one is Cache-Control: private, no-store.
  */
 const { ApiError } = require('../http/errors');
-const { newId, iso, str } = require('./util');
+const { newId, iso, str } = require('./helpers');
 
 function createWatchlists({ store, config, ctx }) {
     const { db } = store;

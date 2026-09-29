@@ -16,7 +16,7 @@
  *                 (kind 'record' for record items, else 'article').
  *   skip          everything else, with a reason (counted in the sync state, never guessed at).
  */
-const { parseTime, parseDecimal } = require('./util');
+const { parseTime, parseDecimal } = require('./helpers');
 
 const SEC_PATH_RE = /^https?:\/\/(?:www\.)?sec\.gov\/Archives\/edgar\/data\/(\d{1,10})\/(\d{18})(?:\/|$)/i;
 const FORM_RE = /^[A-Z0-9][A-Z0-9 \-/.]{0,19}$/;

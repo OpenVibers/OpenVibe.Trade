@@ -5,7 +5,7 @@
  * machine-readable representation always describe the same data (§32.5: no divergence).
  */
 const seo = require('openvibe-publishing/seo');
-const { iso } = require('./util');
+const { iso } = require('./helpers');
 const { DISCLAIMER } = require('./alerts');
 
 function createReading({ store, ctx }) {

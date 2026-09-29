@@ -2,8 +2,13 @@
 
 /**
  * Indexability and OpenVibe.Search for instrument pages (openvibe-publishing/seo gate and
- * index-hooks). The only public, indexable objects Trade has are instrument pages; watchlists,
- * alert rules and deliveries are private and never reach this module.
+ * index-hooks), on the shared publication glue (openvibe-publishing/publication).
+ *
+ * The gate facts, the document body and the canonical path are Trade's; the mechanics — the
+ * sequencer revision, the two events, the outbox write and the IndexNow ping — are createPublication,
+ * which stamps and enqueues on the caller's transaction handle so the document, its event and
+ * Trade's own change commit or roll back together. The only public, indexable objects Trade has are
+ * instrument pages; watchlists, alert rules and deliveries are private and never reach this module.
  *
  * Gate facts for an instrument page:
  *   state        active → published, archived → unpublished
@@ -22,6 +27,7 @@ const seo = require('openvibe-publishing/seo');
 const hooks = require('openvibe-publishing/index-hooks');
 const authorship = require('openvibe-publishing/authorship');
 const ssr = require('openvibe-publishing/ssr');
+const { createPublication } = require('openvibe-publishing/publication');
 
 const OWNER = 'trade';
 
@@ -78,22 +84,17 @@ function createIndexing({ store, config, ctx, indexnow }) {
         });
     }
 
-    /** Stamp and enqueue the Search document when it changed. Inside the caller's transaction. */
+    const publication = createPublication({
+        owner: OWNER, sequencer: store.sequencer, outbox: ctx.outbox, baseUrl: config.baseUrl, indexnow, now: store.now,
+        decide: (instrument, now) => decide(instrument, now),
+        document: (instrument, decision) => document(instrument, decision),
+        page: (instrument) => ctx.urls.instrument(instrument),
+    });
+
+    /** Stamp and enqueue the Search document when it changed, on the caller's handle (ambient tx). */
     async function refresh(instrument, { traceparent } = {}) {
         if (!instrument) return null;
-        const decision = await decide(instrument);
-        const doc = await document(instrument, decision);
-        const prev = await store.sequencer.current(OWNER, 'instrument', instrument.id);
-        if (doc.deleted && prev == null) return null;
-        const stamped = await store.sequencer.stamp(store.db, doc);
-        if (prev != null && stamped.revision === prev) return null;
-        // IndexNow: tell the engines a public, indexable instrument page appeared or changed — or
-        // that a page which was in the index left it (retracted, archived, stale price). Never for a
-        // page that was never indexable (a draft, private or noindex from the start).
-        if (indexnow && indexnow.enabled && (decision.indexable || prev != null)) {
-            indexnow.pingSoon([ctx.urls.instrument(instrument), ctx.urls.abs('/sitemap.xml')]);
-        }
-        return await ctx.outbox.emit(hooks.indexEvent({ document: stamped, now: store.now() }), { traceparent });
+        return await publication.sync(db, instrument, { traceparent });
     }
 
     return {

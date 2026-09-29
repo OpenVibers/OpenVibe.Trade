@@ -20,7 +20,7 @@
  * same way. A ticker or CIK names exactly one instrument (a unique index enforces it).
  */
 const { ApiError } = require('../http/errors');
-const { newId, invalid, str } = require('./util');
+const { newId, invalid, str } = require('./helpers');
 
 const KINDS = ['equity', 'fund', 'index', 'currency', 'commodity', 'crypto', 'other'];
 const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.-]{0,15}$/;

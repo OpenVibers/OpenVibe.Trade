@@ -20,7 +20,7 @@
 const authorship = require('openvibe-publishing/authorship');
 const ssr = require('openvibe-publishing/ssr');
 const { ApiError } = require('../http/errors');
-const { iso, invalid } = require('./util');
+const { iso, invalid } = require('./helpers');
 
 const WORKFLOW = 'trade.summarize_market_context';
 const ADVICE_RE = /\b(you should (buy|sell|hold|invest|short)|we recommend|i recommend|recommend(s|ed)? (buying|selling|holding)|strong (buy|sell)|(buy|sell|hold|outperform|underperform) rating|price target|guaranteed (return|profit)s?)\b/i;

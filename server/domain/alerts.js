@@ -21,7 +21,7 @@
  * timestamps and source), never rendered notification text: Network renders the notification.
  */
 const { ApiError } = require('../http/errors');
-const { newId, iso, parseDecimal, invalid, str, json } = require('./util');
+const { newId, iso, parseDecimal, invalid, str, json } = require('./helpers');
 const { formType } = require('./mapping');
 
 const KINDS = ['threshold', 'filing_type', 'new_document'];

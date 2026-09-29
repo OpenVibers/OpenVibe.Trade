@@ -3,35 +3,43 @@
 /**
  * Pull the trade category from OpenVibe.Sources and record what it states.
  *
+ * The Sources client, the change cursor and the per-page pull loop are the ingest chassis
+ * (openvibe-publishing/ingest): one transaction per page (the page's writes and the cursor advance
+ * commit together), one savepoint per item, so a crash replays the page and a bad item is isolated.
+ * This module keeps only Trade's own half — item mapping, instrument resolution, observations,
+ * documents, freshness reporting and the trade_sync_state bookkeeping.
+ *
  *   1. GET /api/v1/sources            every trade source's health → freshness (report)
  *   2. GET /api/v1/items?category=trade&after=<cursor>&include_removed=1, in change order:
  *        removed item            → the document is hidden (the row stays)
  *        observation item        → an observation (domain/observations.js; idempotent per item revision)
  *        filing / keyed item     → a document (domain/documents.js; new → document alerts)
  *        no instrument matches   → skipped (counted by reason; nothing is created for it)
- *      Each page is applied in one transaction together with the cursor, so a crash replays the
- *      page and every effect is idempotent (UNIQUE keys on observations, documents and deliveries).
- *      The page's per-source health block → freshness as well.
  *
  * A failed call is recorded in trade_sync_state (last_error) and changes nothing else; freshness
  * then decays on Trade's own clock, so pages show the data as stale instead of pretending.
  */
+const { createChangeCursor, pullChanges, normalize } = require('openvibe-publishing/ingest');
 const { mapItem } = require('./mapping');
-const { parseTime, iso, json } = require('./util');
+const { parseTime, iso, json } = normalize;
 
+const PREFIX = 'trade';
 const CURSOR = 'sources.trade';
 
-function createSync({ store, config, ctx, sources, log = console }) {
+/** The chassis outcome for a domain counter key: a removal is a tombstone, everything else applied. */
+const outcomeOf = (key) => (key === 'documents_removed' || key === 'removed_unknown' ? 'removed' : 'applied');
+
+function createIngest({ store, config, ctx, sources, log = console }) {
     const { db } = store;
+    const cursor = createChangeCursor(db, { prefix: PREFIX, now: store.now });
     const q = {
         get: db.prepare('SELECT * FROM trade_sync_state WHERE name = ?'),
         ensure: db.prepare("INSERT INTO trade_sync_state (name, cursor, counts) VALUES (?, 0, '{}') ON CONFLICT DO NOTHING"),
-        advance: db.prepare('UPDATE trade_sync_state SET cursor = @cursor, counts = @counts WHERE name = @name'),
-        ok: db.prepare('UPDATE trade_sync_state SET last_ok_at = ?, last_error = NULL WHERE name = ?'),
+        save: db.prepare('UPDATE trade_sync_state SET counts = @counts, last_ok_at = @ok, last_error = NULL WHERE name = @name'),
         fail: db.prepare('UPDATE trade_sync_state SET last_error = ?, last_error_at = ? WHERE name = ?'),
     };
-    let ensured = false;   // the cursor row, written on the first run (not at construction: the factory stays synchronous)
-    const ensureCursor = async () => { if (!ensured) { await q.ensure.run(CURSOR); ensured = true; } };
+    let ensured = false;   // the state row, written on the first run (not at construction: the factory stays synchronous)
+    const ensureState = async () => { if (!ensured) { await q.ensure.run(CURSOR); ensured = true; } };
     let running = null;
 
     async function reportHealth(key, h, extra = {}) {
@@ -81,32 +89,26 @@ function createSync({ store, config, ctx, sources, log = console }) {
 
     async function runOnce() {
         if (!sources.enabled) return { ok: false, skipped: 'disabled' };
-        await ensureCursor();
+        await ensureState();
         const summary = { pages: 0, counts: {} };
+        const counts = {};
         try {
-            const list = await sources.sources();
+            const list = await sources.listSources();
             for (const s of (list.sources || [])) {
                 if (s && s.category === config.sources.category && s.key) await reportHealth(s.key, s.health, s);
             }
-            for (let page = 0; page < config.sources.maxPagesPerRun; page++) {
-                const state = await q.get.get(CURSOR);
-                const data = await sources.items({ after: state.cursor, limit: config.sources.pageLimit });
-                const items = Array.isArray(data.items) ? data.items : [];
-                await store.tx(async () => {
-                    const counts = json((await q.get.get(CURSOR)).counts, {});
-                    for (const item of items) {
-                        const k = await applyItem(item);
-                        counts[k] = (counts[k] || 0) + 1;
-                        summary.counts[k] = (summary.counts[k] || 0) + 1;
-                    }
-                    for (const [key, h] of Object.entries(data.sources || {})) await reportHealth(key, h);
-                    const next = Number.isInteger(data.next_after) ? data.next_after : state.cursor;
-                    await q.advance.run({ name: CURSOR, cursor: Math.max(next, state.cursor), counts: JSON.stringify(counts) });
-                });
-                summary.pages++;
-                if (!data.more || !items.length) break;
-            }
-            await q.ok.run(store.now(), CURSOR);
+            const pull = await pullChanges({
+                db, cursor, source: sources, name: CURSOR,
+                maxPages: config.sources.maxPagesPerRun, pageSize: config.sources.pageLimit,
+                apply: async (item) => {
+                    const key = await applyItem(item);
+                    counts[key] = (counts[key] || 0) + 1;
+                    return outcomeOf(key);
+                },
+            });
+            summary.pages = pull.pages;
+            summary.counts = counts;
+            await q.save.run({ name: CURSOR, counts: JSON.stringify(counts), ok: store.now() });
             ctx.outbox.kick();
             return { ok: true, ...summary };
         } catch (err) {
@@ -126,11 +128,11 @@ function createSync({ store, config, ctx, sources, log = console }) {
             return running;
         },
         async state() {
-            await ensureCursor();
+            await ensureState();
             const s = await q.get.get(CURSOR);
-            return { enabled: sources.enabled, cursor: s.cursor, last_ok_at: iso(s.last_ok_at), last_error: s.last_error, last_error_at: iso(s.last_error_at), counts: json(s.counts, {}) };
+            return { enabled: sources.enabled, cursor: await cursor.get(CURSOR), last_ok_at: iso(s.last_ok_at), last_error: s.last_error, last_error_at: iso(s.last_error_at), counts: json(s.counts, {}) };
         },
     };
 }
 
-module.exports = { createSync };
+module.exports = { createIngest, CURSOR };

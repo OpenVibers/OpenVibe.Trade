@@ -3,6 +3,10 @@
 /**
  * Freshness per source: is what Trade shows from a source still current?
  *
+ * The staleness verdict itself is the ingest chassis's generic rule (openvibe-publishing/ingest,
+ * freshness.verdict/view) with Trade's window as the parameter; this module keeps only what is
+ * Trade's own — the trade_source_status projection and the trade.source.stale|recovered transitions.
+ *
  * A source is FRESH at time `now` only when its last successful fetch is known and younger than its
  * staleness window (Sources' stale_after_sec, else TRADE_DEFAULT_STALE_AFTER_SEC). Everything
  * else is stale:
@@ -17,7 +21,8 @@
  * `trade.source.stale` and `trade.source.recovered` are emitted only on a transition (evaluate()),
  * so a replay or a second tick changes nothing.
  */
-const { iso } = require('./util');
+const { freshness: fresh, normalize } = require('openvibe-publishing/ingest');
+const { iso } = normalize;
 
 function createFreshness({ store, config, outbox }) {
     const { db } = store;
@@ -37,30 +42,12 @@ function createFreshness({ store, config, outbox }) {
 
     /** Pure: the verdict for one status row at `now`. row may be null (unknown source). */
     function verdict(row, now) {
-        if (!row) return { known: false, stale: true, staleSince: null, window: def, lastSuccessAt: null };
-        const window = row.stale_after_sec || def;
-        if (row.last_success_at == null) return { known: true, stale: true, staleSince: row.stale_since, window, lastSuccessAt: null };
-        const until = row.last_success_at + window * 1000;
-        return { known: true, stale: now > until, staleSince: now > until ? until : null, window, lastSuccessAt: row.last_success_at };
+        return fresh.verdict(row, now, def);
     }
 
     async function view(key, now = store.now()) {
         const row = await q.get.get(key) || null;
-        const v = verdict(row, now);
-        return {
-            key,
-            name: row ? row.name : null,
-            known: v.known,
-            status: !v.known ? 'unknown' : v.stale ? 'stale' : 'fresh',
-            stale: v.stale,
-            stale_since: iso(v.staleSince),
-            last_success_at: iso(v.lastSuccessAt),
-            stale_after_sec: v.window,
-            upstream_status: row ? row.upstream_status : null,
-            reported_at: row ? iso(row.reported_at) : null,
-            terms_note: row ? row.terms_note : null,
-            license_note: row ? row.license_note : null,
-        };
+        return fresh.view(row, key, now, def);
     }
 
     async function ensure(key) { await q.ensure.run(key, store.now()); }

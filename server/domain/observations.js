@@ -18,7 +18,7 @@
  * instrument's Search document (the gate's stale_price rule looks at monetary observations).
  */
 const { ApiError } = require('../http/errors');
-const { newId, iso, parseTime, parseDecimal, invalid, str, httpUrl } = require('./util');
+const { newId, iso, parseTime, parseDecimal, invalid, str, httpUrl } = require('./helpers');
 
 const METRIC_RE = /^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/;
 const UNIT_RE = /^[A-Za-z][A-Za-z0-9/%._-]{0,19}$/;

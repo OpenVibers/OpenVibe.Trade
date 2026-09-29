@@ -64,7 +64,7 @@ const { mapItem } = require('../server/domain/mapping');
         const docs = (await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_source_documents').get()).n;
         const obs = (await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations').get()).n;
         const evts = (await t.events()).length;
-        await t.ctx.store.db.prepare("UPDATE trade_sync_state SET cursor = 0 WHERE name = 'sources.trade'").run();
+        await t.ctx.store.db.prepare("UPDATE trade_ingest_cursor SET cursor = 0 WHERE name = 'sources.trade'").run();
         const r = await t.ctx.sync.run();
         assert.strictEqual(r.ok, true);
         assert.strictEqual((await t.ctx.store.db.prepare('SELECT COUNT(*) AS n FROM trade_source_documents').get()).n, docs);
@@ -136,7 +136,8 @@ const { mapItem } = require('../server/domain/mapping');
     await check('Trade asks Sources with its own service token for exactly sources.item.read and sources.source.read', async () => {
         const g = t.network.grants.filter((x) => x.audience === 'openvibe.sources');
         assert.ok(g.length >= 1);
-        assert.deepStrictEqual(g[0].scope.split(' ').sort(), ['sources.item.read', 'sources.source.read']);
+        const scopes = [...new Set(g.flatMap((x) => String(x.scope || '').split(/\s+/).filter(Boolean)))].sort();
+        assert.deepStrictEqual(scopes, ['sources.item.read', 'sources.source.read']);
         assert.ok(t.sources.calls.some((c) => /category=trade/.test(c.url) && /include_removed=1/.test(c.url)));
     });
 

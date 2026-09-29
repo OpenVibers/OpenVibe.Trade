@@ -3,7 +3,7 @@
  * Background work in the Trade process (two timers):
  *
  *   Sources sync     every TRADE_SYNC_INTERVAL_MS (and early when a signed webhook arrives):
- *                    domain/sync.js pulls the trade category; idempotent per item revision
+ *                    domain/ingest.js pulls the trade category; idempotent per item revision
  *   freshness        every TRADE_FRESHNESS_INTERVAL_MS: re-evaluate every source on Trade's clock
  *                    (trade.source.stale / recovered on transitions only) and re-send any instrument
  *                    Search document whose gate decision changed (e.g. a price observation aged
