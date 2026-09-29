@@ -13,7 +13,7 @@
 const { createReadiness } = require('openvibe-shared/ready');
 const { CHARTER_TABLES } = require('./db');
 
-function createTradeReadiness({ store, auth, outbox, sync, freshness, valkey = null, release = null }) {
+function createTradeReadiness({ store, jwks, outbox, sync, freshness, valkey = null, release = null }) {
     const { db } = store;
     return createReadiness({
         service: 'trade',
@@ -33,11 +33,7 @@ function createTradeReadiness({ store, auth, outbox, sync, freshness, valkey = n
             { name: 'valkey', required: false, check: async () => (valkey ? valkey.ready() : { skipped: 'VALKEY_URL not set: per-actor limits count in this process only' }) },
             {
                 name: 'network_jwks', required: false,
-                check: () => {
-                    if (auth.client.publicKey) return true;
-                    auth.ensureKey().catch(() => {});
-                    return 'Network signing key not loaded yet: sign-in and service calls are unavailable';
-                },
+                check: () => (jwks.status().ready ? true : 'Network signing key not loaded yet: sign-in and service calls are unavailable'),
             },
             {
                 name: 'events_relay', required: false,

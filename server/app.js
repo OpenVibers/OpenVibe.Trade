@@ -22,11 +22,13 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const contracts = require('openvibe-contracts');
 
+const { createSsoClient } = require('openvibe-sdk/sso');
+const { jwksClient } = require('openvibe-sdk/auth');
+const { createServiceOutbox } = require('openvibe-sdk/events');
+
 const configLib = require('./config');
 const { openStore } = require('./db');
-const { createAuthClient, createAuthRoutes } = require('./auth/sso');
 const { createViewerResolver } = require('./auth/viewer');
-const { createTradeOutbox } = require('./events/outbox');
 const { createWebhook } = require('./events/webhook');
 const { createUrls } = require('./domain/urls');
 const { createInstruments } = require('./domain/instruments');
@@ -55,7 +57,7 @@ const { assetVersion } = require('./render/layout');
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const VERSION = require('../package.json').version;
 
-/** opts: config, store, now (clock), fetchImpl, auth (a createAuthClient-like object), log,
+/** opts: config, store, now (clock), fetchImpl, auth (a createSsoClient-like object), log,
  *  limitsNow (the per-actor limiter's clock, tests; default the wall clock) */
 async function createApp(opts = {}) {
     const config = opts.config || configLib.load();
@@ -67,7 +69,13 @@ async function createApp(opts = {}) {
     // One context object: domain modules reach each other through it at call time.
     const ctx = { config, store, log };
     ctx.urls = createUrls(config);
-    ctx.outbox = createTradeOutbox({ db: store.db, config, fetchImpl, now: store.now, log });
+    ctx.outbox = createServiceOutbox({
+        db: store.db, source: 'trade',
+        eventsUrl: config.events.url, networkInternalUrl: config.networkInternalUrl,
+        clientId: config.oauth.clientId, clientSecret: config.oauth.clientSecret,
+        intervalMs: config.events.intervalMs, now: store.now, log,
+        ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    });
     ctx.instruments = createInstruments({ store });
     ctx.freshness = createFreshness({ store, config, outbox: ctx.outbox });
     ctx.alerts = createAlerts({ store, config, ctx });
@@ -79,8 +87,19 @@ async function createApp(opts = {}) {
     ctx.reading = createReading({ store, ctx });
     ctx.sources = opts.sourcesClient || createSourcesClient({ config, fetchImpl });
     ctx.sync = createSync({ store, config, ctx, sources: ctx.sources, log });
-    ctx.auth = opts.auth || createAuthClient(config);
-    ctx.viewers = createViewerResolver({ auth: ctx.auth, config });
+    // Sign-in with OpenVibe.Network (openvibe-sdk/sso): routes, offline session verification through the
+    // shared JWKS client, state + PKCE. ctx.jwks is the same client viewer.js verifies service tokens with.
+    ctx.jwksUrl = `${String(config.networkInternalUrl || config.networkUrl).replace(/\/+$/, '')}/api/.well-known/jwks`;
+    ctx.auth = opts.auth || createSsoClient({
+        site: 'trade', baseUrl: config.baseUrl,
+        clientId: config.oauth.clientId, clientSecret: config.oauth.clientSecret,
+        redirectUri: config.oauth.redirectUri, scope: config.oauth.scope,
+        networkUrl: config.networkUrl, networkInternalUrl: config.networkInternalUrl,
+        issuer: config.issuer || config.networkUrl, secureCookies: config.cookies.secure, log,
+    });
+    ctx.jwks = jwksClient(ctx.jwksUrl, { log });
+    ctx.jwks.keys().catch(() => {});   // warm the key cache at boot (non-fatal if the Network is down)
+    ctx.viewers = createViewerResolver({ auth: ctx.auth, config, jwksUrl: ctx.jwksUrl });
     ctx.common = createCommon({ config, store });
     ctx.worker = createWorker({ config, sync: ctx.sync, freshness: ctx.freshness, indexing: ctx.indexing, outbox: ctx.outbox, log });
 
@@ -131,7 +150,7 @@ async function createApp(opts = {}) {
     // GET /release.json (ADR-016) and POST /release-metrics (release_client_updates_total in /metrics).
     define(machine, 'get', '/release.json', 'releaseInfo', release.handler);
     define(machine, 'post', '/release-metrics', 'releaseMetrics', release.collect(metrics.registry));
-    const readiness = createTradeReadiness({ store, auth: ctx.auth, outbox: ctx.outbox, sync: ctx.sync, freshness: ctx.freshness, release: release.release, valkey: ctx.valkey });
+    const readiness = createTradeReadiness({ store, jwks: ctx.jwks, outbox: ctx.outbox, sync: ctx.sync, freshness: ctx.freshness, release: release.release, valkey: ctx.valkey });
     define(machine, 'get', '/api/ready', 'readiness', readiness.handler);
     app.use(machine);
 
@@ -140,7 +159,7 @@ async function createApp(opts = {}) {
 
     // ── Sign-in (OAuth2 client of OpenVibe.Network) ─────────
     app.use('/auth/', rateLimit({ windowMs: 15 * 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));
-    app.use('/auth', createAuthRoutes(config, ctx.auth));
+    app.use('/auth', ctx.auth.router(express));
     {
         const legal = require('openvibe-shared/legal');
         const legalRouter = express.Router();

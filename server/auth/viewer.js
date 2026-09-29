@@ -20,10 +20,11 @@
  * on that token alone: a bad one is refused (problem+json), never downgraded to anonymous.
  */
 const contracts = require('openvibe-contracts');
-const { extractToken, claimsToUser, decodeJwtPayload } = require('./sso');
+const { verifyServiceToken } = require('openvibe-sdk/auth');
+const { claimsToUser, decodeJwtPayload } = require('openvibe-sdk/sso');
 const { checkCapability } = require('./capabilities');
 
-const { ids, serviceAuth, http, staff: staffMap } = contracts;
+const { ids, http, staff: staffMap } = contracts;
 const PRINCIPAL_SUB = /^(svc|app|mod):/;
 const AUDIENCE = 'openvibe.trade';
 
@@ -33,14 +34,16 @@ class ViewerError extends Error {
 
 const ANONYMOUS = Object.freeze({ kind: 'anonymous', subject: null, editor: false, origin: 'user' });
 
-function createViewerResolver({ auth, config }) {
+function createViewerResolver({ auth, config, jwksUrl }) {
     const editors = new Set(config.editors || []);
 
     async function fromServiceToken(req, token) {
-        const publicKey = await auth.ensureKey();
-        if (!publicKey) throw new ViewerError(503, 'identity.unavailable', 'the Network signing key is not loaded yet');
-        const r = serviceAuth.verifyServiceToken(token, { publicKey, issuer: config.networkUrl, audience: AUDIENCE });
-        if (!r.ok) throw new ViewerError(401, r.code, r.reason);
+        // The SDK picks the key from the shared JWKS client; every rule is our pinned openvibe-contracts'.
+        const r = await verifyServiceToken(token, { jwks: jwksUrl, issuer: config.networkUrl, audience: AUDIENCE, contracts });
+        if (!r.ok) {
+            if (r.code === 'token.unavailable') throw new ViewerError(503, 'identity.unavailable', r.reason || 'the Network signing key is not loaded yet');
+            throw new ViewerError(401, r.code, r.reason);
+        }
         // Developer apps (app:…) and modules (mod:…) are third parties: they act only for the person
         // who authorized them (on_behalf_of), never for whoever X-OV-Subject names. Only first-party
         // service principals (svc:…) are trusted to name the acting person.
@@ -84,7 +87,7 @@ function createViewerResolver({ auth, config }) {
                 return await fromServiceToken(req, token);
             }
         }
-        const token = extractToken(req);
+        const token = auth.extractToken(req);
         if (!token) return ANONYMOUS;
         return (await fromUserToken(token)) || ANONYMOUS;
     }
