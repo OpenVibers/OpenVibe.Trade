@@ -9,7 +9,7 @@
  * filled in: a datum without an observation time or a retrieval time is refused, and an instrument
  * without observations shows no number at all.
  *
- * Rows are immutable (SQLite triggers). The same (source_key, source_ref) recorded twice is one
+ * Rows are immutable (PostgreSQL triggers). The same (source_key, source_ref) recorded twice is one
  * observation (a replay answers created: false); the same reference with a DIFFERENT value is a
  * 409 — a source correcting itself sends a new reference, and both stay on record.
  *

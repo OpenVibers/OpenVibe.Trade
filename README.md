@@ -346,9 +346,7 @@ Production deploys with `sudo ovhost deploy trade` on the host (strategy `git-ch
 fast-forward `/opt/openvibe.trade`, install on a lockfile change, restart, wait for `/api/ready`).
 The unit is `openvibe-trade.service` on `127.0.0.1:4860`, the env file `/etc/openvibe/trade.env`. The database is
 `ov_trade` on the host's data role (`sudo /opt/openvibe.host/roles/data/add-service.sh trade` writes its settings); the
-release migrates it at boot. The one-time move from SQLite is `scripts/migrate-to-postgres.js` (openvibe-sdk
-`runSqliteMigration`, with a `--pglite` rehearsal mode), run while the service is stopped; the old
-`/var/lib/openvibe-trade/trade.db` stays read-only for 7 days as the rollback.
+release migrates it at boot.
 Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
 restart; afterwards `sudo ovhost rollback trade --to <sha>`. Migrations only add tables and columns.
 

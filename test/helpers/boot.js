@@ -12,9 +12,6 @@
  * opts: env (overrides), clock, log (Trade's logger; default quiet), limitsNow (the per-actor limiter's
  * clock; default the wall clock).
  */
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const http = require('http');
 const { startNetwork, startSources } = require('./mocks');
 
@@ -28,15 +25,12 @@ function makeClock(start = T0) {
 async function boot(opts = {}) {
     const network = await startNetwork();
     const sources = await startSources({ network });
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-trade-test-'));
-    const dbPath = path.join(dir, 'trade.db');
     const clock = opts.clock || makeClock();
     const editor = network.addUser('editor');
     const alice = network.addUser('alice');
     const bob = network.addUser('bob');
     const env = {
         NODE_ENV: 'test', PORT: '0', BASE_URL: 'https://openvibe.trade', TRUST_PROXY: '1',
-        TRADE_DB_PATH: dbPath,
         OV_NETWORK_URL: network.url, OV_NETWORK_INTERNAL_URL: network.url,
         OV_OAUTH_CLIENT_ID: 'trade', OV_OAUTH_CLIENT_SECRET: 'shh', COOKIE_SECURE: 'false',
         OV_SOURCES_INTERNAL_URL: sources.url,
@@ -49,7 +43,7 @@ async function boot(opts = {}) {
     const quiet = { log() {}, warn() {}, error: (...a) => { if (process.env.VERBOSE) console.error(...a); } };
 
     const { createStore } = require('../../server/db');
-    // One database per boot (PGlite, or TRADE_TEST_STORE=pg: the containers); a restart keeps it, like a file did.
+    // One database per boot (PGlite, or TRADE_TEST_STORE=pg: the containers); a restart keeps it.
     const testdb = await require('./db').testDb();
     let server = null;
     let built = null;
@@ -87,7 +81,7 @@ async function boot(opts = {}) {
     }
 
     const t = {
-        network, sources, clock, dbPath, editor, alice, bob, get, events, T0,
+        network, sources, clock, editor, alice, bob, get, events, T0,
         csrf: (user) => require('../../server/auth/forms').csrfToken({ formSecret: env.TRADE_FORM_SECRET }, user),
         iso: (ms) => new Date(ms).toISOString(),
         async instrument(input) { return await t.ctx.instruments.create({ kind: 'equity', ...input }, editor.subject); },
@@ -96,7 +90,7 @@ async function boot(opts = {}) {
             return await t.ctx.observations.record({ source_key: 'test-feed', unit: 'USD', currency: 'USD', ...input }, instrument, { recordedBy: 'svc:feed' });
         },
         async restart() { await stop(); await start(); },
-        async close() { await stop(); await testdb.close(); await network.close(); await sources.close(); fs.rmSync(dir, { recursive: true, force: true }); },
+        async close() { await stop(); await testdb.close(); await network.close(); await sources.close(); },
     };
     await start();
     return t;

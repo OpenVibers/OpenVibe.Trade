@@ -10,7 +10,7 @@
  *   trade.index_document.upserted|deleted the OpenVibe.Search document or tombstone of an
  *                                         instrument page (index-hooks indexEvent)
  *
- * emit() runs inside the SQLite transaction that makes the change, so an event exists if and only
+ * emit() runs inside the database transaction that makes the change, so an event exists if and only
  * if its change committed. The relay publishes with Trade's service token (events.event.publish,
  * audience openvibe.events) only when EVENTS_URL and OV_OAUTH_CLIENT_SECRET are set; otherwise
  * rows wait in event_outbox and /api/ready reports the relay as off.

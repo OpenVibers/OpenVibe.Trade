@@ -24,9 +24,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Trade's own database lives in /var/lib/openvibe-trade; the code tree stays read-only.
+# The code tree stays read-only; Trade's own database is PostgreSQL on the host.
 StateDirectory=openvibe-trade
-Environment=TRADE_DB_PATH=/var/lib/openvibe-trade/trade.db
 
 [Install]
 WantedBy=multi-user.target

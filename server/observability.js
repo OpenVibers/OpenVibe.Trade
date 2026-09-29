@@ -2,7 +2,7 @@
 /**
  * Truthful readiness for GET /api/ready (openvibe-shared/ready).
  *
- *   db              required  a real query on Trade's SQLite (the nine charter tables answer)
+ *   db              required  a real query on Trade's PostgreSQL (the nine charter tables answer)
  *   network_jwks    optional  the Network signing key has loaded; without it pages and feeds
  *                             serve, but nobody can sign in and service tokens are refused (503)
  *   events_relay    optional  the outbox relay is configured and has no rejected rows

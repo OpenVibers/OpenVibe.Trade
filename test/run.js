@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Runs every test/*.test.js in its own process and fails if any fails. They use temp SQLite
- * databases and in-process mocks of OpenVibe.Network and Sources; none needs the
- * network or a running site.
+ * Runs every test/*.test.js in its own process and fails if any fails. They use PGlite databases
+ * (or, with TRADE_TEST_STORE=pg, the PostgreSQL containers) and in-process mocks of OpenVibe.Network
+ * and Sources; none needs the network or a running site.
  *
  *   npm test                 # everything
  *   npm test -- schedule     # only files whose name contains one of the words
