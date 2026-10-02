@@ -6,6 +6,7 @@
  */
 const express = require('express');
 const contracts = require('openvibe-contracts');
+const cache = require('openvibe-shared/cache-policy');
 
 /** A refusal with a stable problem code (e.g. 404 'post.not_found'). */
 class ApiError extends Error {
@@ -56,7 +57,7 @@ function jsonBody(req, res, next) {
 
 /** Private, per-viewer responses: never stored by a shared cache, never indexed. */
 function privateNoStore(res) {
-    res.set('Cache-Control', 'private, no-store');
+    res.set('Cache-Control', cache.htmlHeaders({ private: true }));
     res.vary('Cookie');
     res.vary('Authorization');
 }

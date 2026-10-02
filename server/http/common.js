@@ -12,6 +12,7 @@
  */
 const express = require('express');
 const seo = require('openvibe-publishing/seo');
+const cache = require('openvibe-shared/cache-policy');
 const { renderPage } = require('../render/layout');
 const views = require('../render/views');
 const { csrfToken, checkCsrf } = require('../auth/forms');
@@ -43,7 +44,7 @@ function createCommon({ config, store }) {
     function cacheFor(req, res, { personal = false } = {}) {
         vary(res);
         if (personal || (req.viewer && req.viewer.kind !== 'anonymous')) privateNoStore(res);
-        else res.set('Cache-Control', 'public, max-age=60');
+        else res.set('Cache-Control', cache.htmlHeaders({ maxAge: 60 }));
     }
 
     /** Render a full page. o: status, title, description, decision, canonical, body, jsonLd, feeds, personal */

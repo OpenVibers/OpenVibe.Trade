@@ -16,6 +16,7 @@ const express = require('express');
 const ovServe = require('openvibe-shared/serve');
 const frame = require('openvibe-shared/frame');
 const seo = require('openvibe-publishing/seo');
+const cache = require('openvibe-shared/cache-policy');
 const { paginate } = require('openvibe-publishing/ssr');
 const views = require('../render/views');
 const { define } = require('./routes');
@@ -51,7 +52,7 @@ function createPages(ctx) {
         const result = await instruments.resolve(req.query.q);
         if (result.status === 'resolved') {
             common.vary(res);
-            res.set('Cache-Control', 'public, max-age=60');
+            res.set('Cache-Control', cache.htmlHeaders({ maxAge: 60 }));
             return res.redirect(302, urls.path.instrument(result.instrument));
         }
         common.page(req, res, { status: result.status === 'not_found' ? 404 : 200, title: 'Find an instrument', body: views.resolvePage({ result, urls }), personal: true });
@@ -73,10 +74,10 @@ function createPages(ctx) {
             const r = await instruments.resolve(raw, { kind: 'ticker' });
             instrument = r.status === 'resolved' ? r.instrument : null;
         }
-        if (!instrument) return asJson ? res.status(404).set('Cache-Control', 'private, no-store').json({ code: 'instrument.not_found', error: 'No such instrument' }) : common.notFound(req, res, `No instrument has the symbol “${raw}”.`);
+        if (!instrument) return asJson ? res.status(404).set('Cache-Control', cache.htmlHeaders({ private: true })).json({ code: 'instrument.not_found', error: 'No such instrument' }) : common.notFound(req, res, `No instrument has the symbol “${raw}”.`);
         if (instrument.symbol !== raw) {
             common.vary(res);
-            res.set('Cache-Control', 'public, max-age=300');
+            res.set('Cache-Control', cache.htmlHeaders({ maxAge: 300 }));
             return res.redirect(301, asJson ? urls.path.instrumentJson(instrument) : urls.path.instrument(instrument) + (req.query.page ? `?page=${encodeURIComponent(req.query.page)}` : ''));
         }
 

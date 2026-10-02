@@ -85,7 +85,7 @@ const { boot, check, done } = require('./helpers/boot');
         assert.ok(/private/.test(mine.headers.get('cache-control')) && /no-store/.test(mine.headers.get('cache-control')));
         const anon = await t.get('/i/ACME');
         assert.ok(!anon.text.includes('Secret plans'));
-        assert.strictEqual(anon.headers.get('cache-control'), 'public, max-age=60');
+        assert.strictEqual(anon.headers.get('cache-control'), 'public, max-age=60, stale-while-revalidate=3600');
         assert.ok(/Cookie/.test(anon.headers.get('vary')));
     });
 
