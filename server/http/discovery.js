@@ -18,6 +18,7 @@
 const express = require('express');
 const seo = require('openvibe-publishing/seo');
 const sharedSeo = require('openvibe-shared/seo');
+const cache = require('openvibe-shared/cache-policy');
 const { define } = require('./routes');
 const { DISCLAIMER } = require('../render/layout');
 
@@ -25,7 +26,7 @@ function createDiscovery(ctx) {
     const { store, instruments, documents, indexing, urls, common } = ctx;
     const router = express.Router();
     const abs = urls.abs;
-    const xml = (res, body, type = 'application/xml') => res.type(type).set('Cache-Control', 'public, max-age=300').send(body);
+    const xml = (res, body, type = 'application/xml') => res.type(type).set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(body);
     const listing = (url) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: url, wordCount: 0 }, { policy: { minWords: 0 } });
 
     function feedItem(d, instrument) {
@@ -44,7 +45,7 @@ function createDiscovery(ctx) {
 
     function sendFeed(res, type, channel, items) {
         if (type === 'json') {
-            return res.type('application/feed+json').set('Cache-Control', 'public, max-age=300').send(JSON.stringify(seo.jsonFeed(channel, items)));
+            return res.type('application/feed+json').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(JSON.stringify(seo.jsonFeed(channel, items)));
         }
         if (type === 'atom') {
             const newest = items.map((i) => i.published).filter(Boolean).sort().pop();
@@ -61,11 +62,11 @@ function createDiscovery(ctx) {
             '# Information only: nothing here is investment advice, and there is no trading here.',
             sharedSeo.robotsTxt({ sitemaps: [abs('/sitemap.xml')], disallow: ['/watchlists', '/alerts', '/editor', '/resolve', '/auth/', '/api/', '/internal/'] }),
         ].join('\n');
-        res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(body);
+        res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(body);
     });
 
     define(router, 'get', '/llms.txt', 'llmsTxt', (_req, res) => {
-        res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(sharedSeo.llmsTxt({
+        res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(sharedSeo.llmsTxt({
             name: 'OpenVibe.Trade',
             summary: 'Informational market context: instruments, timestamped observations with their sources, filings from OpenVibe.Sources, and reviewed context. Information only — not investment advice; no trading here.',
             details: 'Every number on an instrument page is an observation with observed_at, retrieved_at and its source; an instrument without observations shows no number. Stale sources are labelled "stale since <time>" and never replaced. Each instrument page has a JSON twin at /i/<SYMBOL>.json with the same data. AI-written context is labelled and is not published before a person reviews it. There is no custody, order execution, escrow, marketplace or personal advice.',
