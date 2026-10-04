@@ -7,21 +7,34 @@
  * Usage:
  *   node scripts/subscribe.js              # subscribe only
  *   node scripts/subscribe.js --reconcile  # subscribe, then refresh all indexing and kick outbox
+ *   node scripts/subscribe.js --endpoint http://127.0.0.1:4860/internal/events
  *
- * Posts to {EVENTS_URL}/api/v1/subscriptions with the configured webhook secret.
- * A 409 response (subscription already exists) prints 'exists' and continues.
+ * Posts to {EVENTS_URL}/api/v1/subscriptions with a service token (events.subscription.manage for
+ * audience openvibe.events) and the configured webhook secret. Events delivers to this service's own
+ * loopback webhook (127.0.0.1:PORT/internal/events), never the public origin: nginx does not proxy
+ * /internal/. A 409 response (subscription already exists) prints 'exists' and continues.
  * The webhook secret must be at least 32 characters (guard against weak secrets).
  *
  * --reconcile runs ctx.store.tx(() => ctx.indexing.refreshAll()) then ctx.outbox.kick(),
  * which re-evaluates all instrument pages and wakes the outbox relay.
  */
 
+const { serviceAuth } = require('openvibe-contracts');
 const { load } = require('../server/config');
 const { openStore } = require('../server/db');
 
 const RECONCILE = process.argv.includes('--reconcile');
 
-async function subscribe(config, { fetch: fetchImpl = globalThis.fetch } = {}) {
+/** Read a `--name <value>` option from argv (undefined when absent). */
+function option(name, argv = process.argv) {
+    const i = argv.indexOf(`--${name}`);
+    return i >= 0 ? argv[i + 1] : undefined;
+}
+
+/** The endpoint Events delivers to: this service's own inbound webhook. */
+const defaultEndpoint = (config) => `http://127.0.0.1:${config.port}/internal/events`;
+
+async function subscribe(config, { fetch: fetchImpl = globalThis.fetch, tokens = null, endpoint } = {}) {
     const secret = config.events.webhookSecret;
     if (!secret) {
         throw new Error('TRADE_EVENTS_WEBHOOK_SECRET is not set; cannot subscribe');
@@ -32,17 +45,28 @@ async function subscribe(config, { fetch: fetchImpl = globalThis.fetch } = {}) {
     if (!config.events.url) {
         throw new Error('EVENTS_URL is not set; cannot subscribe');
     }
+    if (!config.oauth.clientSecret) {
+        throw new Error('OV_OAUTH_CLIENT_SECRET is not set; cannot subscribe as the trade principal');
+    }
+
+    const auth = tokens || serviceAuth.createTokenClient({
+        tokenUrl: `${config.networkInternalUrl}/oauth/token`,
+        clientId: config.oauth.clientId,
+        clientSecret: config.oauth.clientSecret,
+        audience: 'openvibe.events',
+        scope: 'events.subscription.manage',
+    });
 
     const url = `${config.events.url}/api/v1/subscriptions`;
     const body = {
         topic_pattern: 'sources.*',
-        endpoint: `${config.baseUrl}/internal/events`,
+        endpoint: endpoint || defaultEndpoint(config),
         secret,
     };
 
     const res = await fetchImpl(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(await auth.authHeaders()) },
         body: JSON.stringify(body),
     });
 
@@ -70,9 +94,10 @@ async function main() {
     const config = load();
     const log = console;
 
-    log.log(`[Trade subscribe] port ${config.port}, events ${config.events.url || '(unset)'}`);
+    const endpoint = option('endpoint');
+    log.log(`[Trade subscribe] port ${config.port}, events ${config.events.url || '(unset)'}, endpoint ${endpoint || defaultEndpoint(config)}`);
 
-    const result = await subscribe(config);
+    const result = await subscribe(config, { endpoint });
     log.log(`[Trade subscribe] ${result.created ? 'created' : 'exists'}: ${result.subscription_id || '(no id)'}`);
 
     if (RECONCILE) {
