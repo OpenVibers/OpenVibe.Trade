@@ -242,6 +242,7 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
 Each grant is `[client, capability, audience]`:
 
 - `[trade, events.event.publish, openvibe.events]`
+- `[trade, events.subscription.manage, openvibe.events]`
 - `[trade, sources.item.read, openvibe.sources]`
 - `[trade, sources.source.read, openvibe.sources]`
 - For OpenVibe.AI to deliver drafts: `[ai, trade.context.read, openvibe.trade]` and
@@ -373,8 +374,11 @@ First install (done once; kept for a rebuild):
    Events subscription is created, `TRADE_EVENTS_WEBHOOK_SECRET`.
 2. **Network:** register (or seed) the OAuth client `trade` with redirect
    `https://openvibe.trade/auth/callback`, set its secret, add the grants above.
-3. **Events (optional):** a subscription for consumer `trade`, topic `sources.*`, endpoint
-   `http://127.0.0.1:4860/internal/events`, secret = `TRADE_EVENTS_WEBHOOK_SECRET`.
+3. **Events:** `node scripts/subscribe.js` creates the subscription for consumer `trade`, topic
+   `sources.*`, endpoint `http://127.0.0.1:4860/internal/events` (loopback: nginx never proxies
+   `/internal/`), secret = `TRADE_EVENTS_WEBHOOK_SECRET` (32+ characters). It needs
+   `OV_OAUTH_CLIENT_SECRET` and the `[trade, events.subscription.manage, openvibe.events]` grant.
+   Pass `--endpoint <url>` when the Events host differs.
 4. **Search:** add `trade` to `SEARCH_EVENT_OWNERS` if it is not there.
 5. **systemd:** install `deploy/systemd/openvibe-trade.service` (port 4860, `StateDirectory=openvibe-trade`).
 6. **nginx:** install `deploy/nginx/openvibe.trade.conf` (`/metrics` and `/internal/` never proxied).
