@@ -21,6 +21,8 @@ const frame = require('openvibe-shared/frame');
 const NETWORK_URL = 'https://openvibe.network';
 const SITE_NAME = 'OpenVibe.Trade';
 const DISCLAIMER = 'Information only — not investment advice; no trading here.';
+// The site's one-line AI summary: /llms.txt, /llms-full.txt and the home page's ai-summary all use it.
+const SITE_SUMMARY = 'Informational market context: instruments, timestamped observations with their sources, filings from OpenVibe.Sources, and reviewed context. Information only — not investment advice; no trading here.';
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
 
 const hashes = new Map();
@@ -46,7 +48,8 @@ const NAV_LINKS = [
 
 /**
  * o: title, description, decision (required), canonical, type, jsonLd [], feeds [{ type, href, title }],
- *    body (HTML), viewer, config, path, bodyClass
+ *    body (HTML), viewer, config, path, bodyClass, summary (one-line AI summary; with facts, updated
+ *    and url it becomes the ai-summary meta and WebPage JSON-LD via openvibe-publishing/layout)
  */
 function renderPage(o) {
     if (!o.decision) throw new TypeError('renderPage needs the gate decision');
@@ -83,6 +86,12 @@ function renderPage(o) {
         image: o.image,
         jsonLd: o.jsonLd,
         feeds: o.feeds,
+        // openvibe-publishing v1.3.0: the AI summary, its facts and its date reach shell.page's
+        // seo.pageSummary (ai-summary meta + WebPage JSON-LD); without one, nothing is emitted.
+        summary: o.summary,
+        facts: o.facts,
+        updated: o.updated,
+        url: o.url,
         navbar: nav,
         footer,
         navLinks: NAV_LINKS,
@@ -100,4 +109,4 @@ function renderPage(o) {
     });
 }
 
-module.exports = { renderPage, asset, assetVersion, setRelease, SITE_NAME, NETWORK_URL, DISCLAIMER };
+module.exports = { renderPage, asset, assetVersion, setRelease, SITE_NAME, NETWORK_URL, DISCLAIMER, SITE_SUMMARY };

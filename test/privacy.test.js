@@ -91,7 +91,7 @@ const { boot, check, done } = require('./helpers/boot');
 
     await check('watchlists never appear in sitemaps, feeds, robots-allowed paths, Search documents or events', async () => {
         const blobs = [];
-        for (const p of ['/sitemap.xml', '/sitemaps/instruments.xml', '/feed.xml', '/atom.xml', '/feed.json', '/i/ACME/documents.xml', '/llms.txt', '/i/ACME.json', '/', '/sources']) {
+        for (const p of ['/sitemap.xml', '/sitemaps/instruments.xml', '/feed.xml', '/atom.xml', '/feed.json', '/i/ACME/documents.xml', '/llms.txt', '/llms-full.txt', '/i/ACME.json', '/', '/sources']) {
             const r = await t.get(p);
             assert.ok(r.status < 400, `${p} ${r.status}`);
             blobs.push(r.text);

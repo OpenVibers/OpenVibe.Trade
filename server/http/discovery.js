@@ -5,6 +5,8 @@
  *
  *   GET /robots.txt                        sitemap + explicit automated-consumer policy
  *   GET /llms.txt                          orientation for language models
+ *   GET /llms-full.txt                     the same map, with a short summary of every indexable
+ *                                          instrument (never the source's full text)
  *   GET /sitemap.xml                       sitemap index
  *   GET /sitemaps/instruments.xml          INDEXABLE instrument pages only (the gate decides:
  *                                          person-reviewed context, no stale price); lastmod = the
@@ -20,10 +22,10 @@ const seo = require('openvibe-publishing/seo');
 const sharedSeo = require('openvibe-shared/seo');
 const cache = require('openvibe-shared/cache-policy');
 const { define } = require('./routes');
-const { DISCLAIMER } = require('../render/layout');
+const { DISCLAIMER, SITE_NAME, SITE_SUMMARY } = require('../render/layout');
 
 function createDiscovery(ctx) {
-    const { store, instruments, documents, indexing, urls, common } = ctx;
+    const { config, store, instruments, documents, indexing, context, urls, common } = ctx;
     const router = express.Router();
     const abs = urls.abs;
     const xml = (res, body, type = 'application/xml') => res.type(type).set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(body);
@@ -67,8 +69,8 @@ function createDiscovery(ctx) {
 
     define(router, 'get', '/llms.txt', 'llmsTxt', (_req, res) => {
         res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(sharedSeo.llmsTxt({
-            name: 'OpenVibe.Trade',
-            summary: 'Informational market context: instruments, timestamped observations with their sources, filings from OpenVibe.Sources, and reviewed context. Information only — not investment advice; no trading here.',
+            name: SITE_NAME,
+            summary: SITE_SUMMARY,
             details: 'Every number on an instrument page is an observation with observed_at, retrieved_at and its source; an instrument without observations shows no number. Stale sources are labelled "stale since <time>" and never replaced. Each instrument page has a JSON twin at /i/<SYMBOL>.json with the same data. AI-written context is labelled and is not published before a person reviews it. There is no custody, order execution, escrow, marketplace or personal advice.',
             sections: [
                 { title: 'Start here', links: [
@@ -82,6 +84,22 @@ function createDiscovery(ctx) {
                 ] },
                 { title: 'Data', links: [{ title: 'Instrument JSON', url: abs('/'), note: 'append .json to an instrument URL (/i/<SYMBOL>.json)' }] },
             ],
+        }));
+    });
+
+    // The full-text AI map: the llms.txt header, then a short summary of every indexable instrument
+    // page — the same gate the sitemap uses. The summary is the reviewed context, clipped; the
+    // source's own full text is never reproduced (llms.txt states the rule).
+    define(router, 'get', '/llms-full.txt', 'llmsFullTxt', async (_req, res) => {
+        const active = await instruments.active();
+        const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
+        const pages = await Promise.all(active.filter((_i, n) => decisions[n].indexable).map(async (i) => {
+            const rev = await context.published(i);
+            return { title: `${i.symbol} — ${i.name}`, url: urls.instrument(i), text: rev ? String(rev.text || '').replace(/\s+/g, ' ').trim().slice(0, 300) : '' };
+        }));
+        res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(sharedSeo.llmsFull({
+            site: SITE_NAME, summary: SITE_SUMMARY, base: config.baseUrl, maxBytes: 512 * 1024,
+            sections: [{ title: 'Instruments', pages }],
         }));
     });
 

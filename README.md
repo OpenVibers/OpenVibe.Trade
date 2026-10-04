@@ -124,7 +124,7 @@ deployment has no instruments (editors add them), no documents until the source 
 | `/watchlists` | your watchlists, alert rules and deliveries (private, noindex, `private, no-store`) |
 | `/editor`, `/editor/i/:symbol` | the editor (plain forms, editors only) |
 | `/sitemap.xml` → `/sitemaps/instruments.xml` | indexable instrument pages only |
-| `/robots.txt`, `/llms.txt` | crawler policy (private paths disallowed) and orientation |
+| `/robots.txt`, `/llms.txt`, `/llms-full.txt` | crawler policy (private paths disallowed), orientation, and a short summary of every indexable instrument |
 | `/terms`, `/privacy`, `/dmca` | openvibe-shared legal pages |
 | `/auth/*` | sign-in; the same session layer as Blog and Community |
 | `/api/health`, `/api/ready`, `/release.json`, `POST /release-metrics`, `/metrics` | health, readiness, release, open tabs' update reports (counted in `/metrics`), metrics (loopback only) |

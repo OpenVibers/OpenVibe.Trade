@@ -10,11 +10,12 @@ const path = require('path');
 const { boot, check, done } = require('./helpers/boot');
 
 const DISCLAIMER = 'Information only — not investment advice; no trading here.';
+const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
 
 (async () => {
     const t = await boot();
     const acme = await t.instrument({ symbol: 'ACME', name: 'Acme Corp', cik: '1234567', exchange: 'NYSE' });
-    await t.observe(acme, { metric: 'price.close', value: '10.50', source_ref: 'a', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
+    const { observation } = await t.observe(acme, { metric: 'price.close', value: '10.50', source_ref: 'a', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
     t.sources.setSource('sec-xbrl-filings', { lastSuccessAt: t.iso(t.T0), staleAfterSec: 2700 });
     t.sources.putItem({ canonical_url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000001/0001234567-26-000001-index.htm', title: 'ACME CORP', summary: '10-K', published_at: '2026-09-22T10:00:00Z', retrieved_at: t.iso(t.T0) });
     t.sources.putItem({ canonical_url: 'https://www.sec.gov/Archives/edgar/data/1234567/000123456726000002/0001234567-26-000002-index.htm', title: 'ACME CORP', summary: '8-K', retrieved_at: t.iso(t.T0) });
@@ -106,6 +107,31 @@ const DISCLAIMER = 'Information only — not investment advice; no trading here.
         assert.ok(/ADR-025/.test(doc) && /unresolved|open question/i.test(doc));
         const tables = (await t.ctx.store.db.prepare("SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema()").all()).map((r) => r.name);
         assert.ok(!tables.some((n) => /order|listing|escrow|wallet|custody|payment|cart/.test(n)), tables.join(','));
+    });
+
+    await check('llms-full.txt lists only indexable instruments with a short summary; the home carries the AI summary', async () => {
+        const before = await t.get('/llms-full.txt');
+        assert.strictEqual(before.status, 200);
+        assert.ok(/text\/plain/.test(before.headers.get('content-type')));
+        assert.ok(before.text.startsWith('# OpenVibe.Trade'));
+        assert.ok(before.text.includes('not investment advice'));
+        assert.ok(!before.text.includes('https://openvibe.trade/i/ACME'), 'nothing indexable is listed yet');
+        assert.ok(Buffer.byteLength(before.text) <= 512 * 1024, 'llms-full.txt stays within maxBytes');
+
+        // A person-reviewed context makes the page indexable; then it — and only it — is listed.
+        await t.instrument({ symbol: 'OTHR', name: 'Other Co' });
+        const pub = await t.get('/editor/i/ACME/context', { as: t.editor, form: { _csrf: t.csrf(t.editor), body: `Acme's price is stated by the source. ${WORDS(70)}`, cite: `observation:${observation.id}`, publish: '1' } });
+        assert.ok(/n=context_published/.test(pub.headers.get('location')), 'the context published');
+        const after = await t.get('/llms-full.txt');
+        assert.ok(after.text.includes('https://openvibe.trade/i/ACME'));
+        assert.ok(after.text.includes('### ACME — Acme Corp'));
+        assert.ok(after.text.includes('word0'), 'the entry carries the context summary as text');
+        assert.ok(!after.text.includes('https://openvibe.trade/i/OTHR'), 'an instrument without reviewed context is not listed');
+        assert.ok(Buffer.byteLength(after.text) <= 512 * 1024);
+
+        const home = (await t.get('/')).text;
+        assert.ok(home.includes('<meta name="ai-summary"'), 'the home carries the ai-summary meta');
+        assert.ok(home.includes('"@type":"WebPage"'), 'the home carries WebPage JSON-LD');
     });
 
     await t.close();
