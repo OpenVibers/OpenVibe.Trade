@@ -2,21 +2,20 @@
 
 /**
  * Page shell. Every page is server-rendered through this and is complete without JavaScript:
+ *   - the document is openvibe-publishing/layout's (openvibe-shared/shell page())
  *   - <head>: title, description, canonical and robots from the indexability gate's decision
- *     (openvibe-publishing/seo metaTags — there is no default that makes a page indexable),
- *     Open Graph, JSON-LD from real fields only, feed links, the shared app icon
+ *     (there is no default that makes a page indexable), Open Graph/Twitter, JSON-LD from real
+ *     fields only, feed links, the shared app icon, the site stylesheet and the boost marker
  *   - the persistent disclaimer, above the content on every page:
  *     "Information only — not investment advice; no trading here."
- *   - the OpenVibe Frame: navbar.js and theme-loader.js from the Network (progressive), a
+ *   - the OpenVibe Frame: theme-loader, web runtime, navbar and footer from the Network (progressive), a
  *     <noscript> navigation bar and the server-rendered shared footer (openvibe-shared)
  */
 const crypto = require('crypto');
-const ovServe = require('openvibe-shared/serve');
 const fs = require('fs');
 const path = require('path');
-const seo = require('openvibe-publishing/seo');
+const layout = require('openvibe-publishing/layout');
 const { escapeHtml: esc } = require('openvibe-publishing/ssr');
-const appIcon = require('openvibe-shared/app-icon');
 const frame = require('openvibe-shared/frame');
 
 const NETWORK_URL = 'https://openvibe.network';
@@ -51,15 +50,6 @@ const NAV_LINKS = [
  */
 function renderPage(o) {
     if (!o.decision) throw new TypeError('renderPage needs the gate decision');
-    const head = seo.metaTags({
-        title: o.title ? `${o.title} · ${SITE_NAME}` : `${SITE_NAME} — sourced market information`,
-        description: o.description || `Instruments, timestamped observations and filings with their sources. ${DISCLAIMER}`,
-        decision: o.decision,
-        canonical: o.canonical,
-        type: o.type || 'website',
-        siteName: SITE_NAME,
-        jsonLd: (o.jsonLd || []).filter(Boolean),
-    });
     const viewer = o.viewer || { kind: 'anonymous' };
     const signedIn = viewer.kind === 'user';
     const loginNext = encodeURIComponent(o.path || '/');
@@ -81,42 +71,33 @@ function renderPage(o) {
     const account = signedIn
         ? `${viewer.editor ? '<a href="/editor">Editor</a> · ' : ''}<a href="/watchlists">Your watchlists</a> · <a href="/auth/logout?next=${loginNext}">Sign out</a>`
         : `<a href="/auth/login?next=${loginNext}">Sign in with OpenVibe</a>`;
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-${head}
-${seo.feedLinks(o.feeds || [])}
-${appIcon.headTags({ site: 'trade' })}
-<link rel="stylesheet" href="${asset('css/trade.css')}">
-<script src="${ovServe.url('theme-loader.js')}" defer></script>
-<script src="${ovServe.url('navbar.js')}" defer></script>
-<script src="${ovServe.url('footer.js')}" defer></script>
-<meta name="ov-boost" content="trade@${esc(RELEASE)}">
-<script src="${ovServe.url('boost.js')}" data-main="#main" defer></script>
-</head>
-<body class="${esc(o.bodyClass || '')}">
-<a class="skip" href="#main">Skip to content</a>
-<div id="navbar-mount"></div>
-${frame.noscriptNav({ name: SITE_NAME, home: '/', links: NAV_LINKS })}
-<noscript><div class="account-bar" role="navigation" aria-label="Account">${account}</div></noscript>
-<p class="disclaimer" role="note"><strong>${esc(DISCLAIMER)}</strong> Every number shows when it was observed and where it came from; stale sources are labelled as stale.</p>
-<main id="main" class="page">
-${o.body || ''}
-${o.path === '/' ? frame.shipped({ service: 'trade', title: `Recently shipped on ${SITE_NAME}` }) : ''}
-</main>
-<p class="disclaimer disclaimer-foot" role="note">${esc(DISCLAIMER)} OpenVibe.Trade holds no money or assets, takes no orders and gives no personal recommendations.</p>
-${frame.footer(footer)}
-<script>
-window.__OV_PAGE = ${JSON.stringify({ navbar: nav, footer }).replace(/</g, '\\u003c')};
-document.addEventListener('DOMContentLoaded', function () {
-  try { if (window.OpenVibeNavbar) OpenVibeNavbar.init(window.__OV_PAGE.navbar); } catch (e) { /* the Frame is optional */ }
-  try { if (window.OpenVibeFooter) OpenVibeFooter.init(window.__OV_PAGE.footer); } catch (e) { /* */ }
-});
-</script>
-</body>
-</html>`;
+    return layout.renderDocument({
+        site: 'trade',
+        siteName: SITE_NAME,
+        lang: o.lang,
+        title: o.title ? `${o.title} · ${SITE_NAME}` : `${SITE_NAME} — sourced market information`,
+        description: o.description || `Instruments, timestamped observations and filings with their sources. ${DISCLAIMER}`,
+        canonical: o.canonical,
+        decision: o.decision,
+        type: o.type || 'website',
+        image: o.image,
+        jsonLd: o.jsonLd,
+        feeds: o.feeds,
+        navbar: nav,
+        footer,
+        navLinks: NAV_LINKS,
+        home: '/',
+        css: asset('css/trade.css'),
+        release: RELEASE,
+        account,
+        header: `<p class="disclaimer" role="note"><strong>${esc(DISCLAIMER)}</strong> Every number shows when it was observed and where it came from; stale sources are labelled as stale.</p>`,
+        body: o.body,
+        shipped: [
+            o.path === '/' ? frame.shipped({ service: 'trade', title: `Recently shipped on ${SITE_NAME}` }) : '',
+            `<p class="disclaimer disclaimer-foot" role="note">${esc(DISCLAIMER)} OpenVibe.Trade holds no money or assets, takes no orders and gives no personal recommendations.</p>`,
+        ].filter(Boolean).join('\n'),
+        bodyClass: o.bodyClass,
+    });
 }
 
 module.exports = { renderPage, asset, assetVersion, setRelease, SITE_NAME, NETWORK_URL, DISCLAIMER };
