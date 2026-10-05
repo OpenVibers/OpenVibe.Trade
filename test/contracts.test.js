@@ -1,15 +1,18 @@
 'use strict';
 /**
- * The proposals the lead releases in the next openvibe-contracts version are valid against the
- * released schemas, match what the code enforces and emits, and every envelope Trade produces is a
- * valid events.event-envelope@1.
+ * The capability proposals in docs/capabilities-proposal/ are valid against the released schemas and
+ * match what the code enforces and emits; the ids are now released by openvibe-contracts (checked
+ * here and pinned in test/capabilities.test.js), and every envelope Trade produces is a valid
+ * events.event-envelope@1.
  */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const contracts = require('openvibe-contracts');
 const { boot, check, done } = require('./helpers/boot');
-const { PROPOSED } = require('../server/auth/capabilities');
+const { CAPABILITIES } = require('../server/auth/capabilities');
+
+const CAPS = new Set(Object.values(CAPABILITIES));
 
 const DIR = path.join(__dirname, '..', 'docs', 'capabilities-proposal');
 
@@ -25,14 +28,16 @@ const DIR = path.join(__dirname, '..', 'docs', 'capabilities-proposal');
             assert.strictEqual(c.owner, 'trade');
             assert.ok(c.id.split('.').length >= 3);
             assert.strictEqual(`${c.id}.json`, files[caps.indexOf(c)]);
-            assert.ok(!contracts.capabilities.get(c.id) || contracts.capabilities.get(c.id).owner === 'trade', `${c.id} collides with a released capability`);
+            const released = contracts.capabilities.get(c.id);
+            assert.ok(released, `${c.id} is defined by openvibe-contracts`);
+            assert.strictEqual(released.owner, 'trade', `${c.id} collides with a released capability`);
         }
     });
 
     await check('the proposals are exactly the capabilities the code enforces, and cover the charter\'s', async () => {
-        assert.deepStrictEqual(caps.map((c) => c.id).sort(), [...PROPOSED].sort());
-        assert.deepStrictEqual([...manifest.capabilities].sort(), [...PROPOSED].sort());
-        for (const id of ['trade.watchlist.create', 'trade.watchlist.update', 'trade.instrument.resolve', 'trade.alert.create', 'trade.alert.delete', 'trade.context.read']) assert.ok(PROPOSED.has(id), id);
+        assert.deepStrictEqual(caps.map((c) => c.id).sort(), [...CAPS].sort());
+        assert.deepStrictEqual([...manifest.capabilities].sort(), [...CAPS].sort());
+        for (const id of ['trade.watchlist.create', 'trade.watchlist.update', 'trade.instrument.resolve', 'trade.alert.create', 'trade.alert.delete', 'trade.context.read']) assert.ok(CAPS.has(id), id);
         const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'http', 'api.js'), 'utf8');
         for (const c of caps) for (const route of c.implementedBy) assert.ok(src.includes(`'${route.split(' ')[1].replace('/api/v1', '')}'`), `${c.id}: ${route} is not in http/api.js`);
     });
