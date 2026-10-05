@@ -6,7 +6,7 @@
 internally, not launched**: it runs on the production host on 127.0.0.1:4860 only (release
 `9a55644`; `/api/ready` reports `degraded: ["freshness"]` because there is no feed), with an empty
 database (0 instruments), and `openvibe.trade` still shows its placeholder from OpenVibe.Sites. Its
-capabilities and service manifest are registered in openvibe-contracts v0.22.0. No market data
+capabilities and service manifest are registered in openvibe-contracts v0.97.0. No market data
 feed is configured yet (see "What it shows today").
 **Domain:** `openvibe.trade` · **Port:** 4860 · **Service id:** `trade`
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §12.11;
@@ -178,9 +178,9 @@ Service tokens use audience `openvibe.trade`, one capability per route; private 
 and the editor list. The charter's `trade.watchlist.create|update`, `trade.instrument.resolve`,
 `trade.alert.create|delete` and `trade.context.read` are all 3-segment ids here; `read`, `delete`,
 `manage`, `observation.write` and `context.propose` are additions. They and the service manifest
-are released in openvibe-contracts v0.22.0 from the proposals in
+are released in openvibe-contracts (pinned at v0.97.0; the source proposals stay in
 [docs/capabilities-proposal/](docs/capabilities-proposal/) and
-[docs/service-manifest-proposal.json](docs/service-manifest-proposal.json). Grants for these ids are
+[docs/service-manifest-proposal.json](docs/service-manifest-proposal.json)). Grants for these ids are
 decided with the contracts library's matching rule (`server/auth/capabilities.js`).
 
 ### Events (SDK outbox, same transaction as the change)
@@ -222,10 +222,10 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
 
 - **PostgreSQL 18 and Valkey 9** (OpenVibe.Host `roles/data/`, ADR-035): every read and write is async through
   `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional: without `VALKEY_URL` they count per process).
-- **Packages** (pinned by release tarball): `openvibe-contracts` v0.76.0, `openvibe-publishing`
-  v1.1.0 (revisions, authorship, seo, index-hooks, ssr, ingest, publication), `openvibe-shared` v2.2.0 (Frame, app icon,
-  footer, legal, release, metrics, ready), `openvibe-sdk` v0.20.0 (events outbox and inbox, webhook
-  signatures v2, service tokens, per-actor limits).
+- **Packages** (pinned by release tarball): `openvibe-contracts` v0.97.0, `openvibe-publishing`
+  v1.3.0 (revisions, authorship, seo, index-hooks, ssr, ingest, publication), `openvibe-shared` v2.6.0 (Frame, app icon,
+  footer, legal, release, metrics, ready), `openvibe-sdk` v0.26.0 (events outbox and inbox, webhook
+  signatures v2, service tokens, per-actor limits, service kit lifecycle).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
   JWKS, client-credentials tokens.
 - **OpenVibe.Sources:** `sources.item.read` and `sources.source.read` (category `trade`).
@@ -280,7 +280,7 @@ exists. Status against each point:
    empty database); in production there is no market data source yet and the filings source is
    disabled in Sources (see "What it shows today").
 5. **Capability and event registration against OpenVibe.Contracts:** done (openvibe-contracts
-   v0.22.0).
+   v0.97.0).
 6. **Migration and seed strategy, threat review, sitemap/robots/feed behaviour:** done. Nothing to
    migrate (no current implementation); no seed (editors add instruments); threat review below.
 7. **Acceptance tests:** done.
@@ -382,7 +382,7 @@ First install (done once; kept for a rebuild):
 4. **Search:** add `trade` to `SEARCH_EVENT_OWNERS` if it is not there.
 5. **systemd:** install `deploy/systemd/openvibe-trade.service` (port 4860, `StateDirectory=openvibe-trade`).
 6. **nginx:** install `deploy/nginx/openvibe.trade.conf` (`/metrics` and `/internal/` never proxied).
-7. **Contracts:** done: the capabilities and manifest are released in openvibe-contracts v0.22.0,
+7. **Contracts:** done: the capabilities and manifest are released in openvibe-contracts v0.97.0,
    and CI's contracts check runs against them.
 8. **Data:** editors add instruments at `/editor`. Filings appear once `sec-xbrl-filings` is enabled
    in Sources (after a person verifies its terms); numbers appear only once a market data source

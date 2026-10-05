@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const { boot, check, done } = require('./helpers/boot');
-const { PROPOSED } = require('../server/auth/capabilities');
+const { CAPABILITIES } = require('../server/auth/capabilities');
 
 const FORBIDDEN = ['order', 'buy', 'sell', 'execut', 'custod', 'wallet', 'escrow', 'checkout', 'listing',
     'purchas', 'payment', 'payout', 'deposit', 'withdraw', 'cart'];
@@ -94,7 +94,7 @@ function inventory(app) {
     });
 
     await check('no capability id and no produced event type carries those semantics', async () => {
-        for (const id of PROPOSED) assert.deepStrictEqual(violations(id), [], id);
+        for (const id of Object.values(CAPABILITIES)) assert.deepStrictEqual(violations(id), [], id);
         const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'docs', 'service-manifest-proposal.json'), 'utf8'));
         for (const e of manifest.eventsProduced) assert.deepStrictEqual(violations(e), [], e);
         for (const c of manifest.capabilities) assert.deepStrictEqual(violations(c), [], c);

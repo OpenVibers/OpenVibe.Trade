@@ -3,8 +3,11 @@
 /**
  * OpenVibe.Trade — process entry. `node server/index.js`
  * Listens on PORT (4860) behind nginx (deploy/). Starts the outbox relay (when EVENTS_URL and the
- * client secret are set) and the worker (Sources sync, freshness).
+ * client secret are set) and the worker (Sources sync, freshness). On SIGTERM/SIGINT the service
+ * kit drains in-flight requests (Connection: close), stops the worker and the relay, closes the
+ * store, and exits 0 (the 5 s family's deadline exit code).
  */
+const { gracefulStop } = require('openvibe-sdk/service');
 const { createApp } = require('./app');
 
 (async () => {
@@ -19,16 +22,9 @@ server.keepAliveTimeout = 65_000;
 ctx.outbox.start();
 ctx.worker.start();
 
-function shutdown(signal) {
-    console.log(`[Trade] ${signal}: closing`);
-    ctx.worker.stop();
-    server.close(async () => {
-        try { await ctx.outbox.stop(); } catch { /* best effort */ }
-        try { await ctx.store.close(); } catch { /* already closed */ }
-        process.exit(0);
-    });
-    setTimeout(() => process.exit(0), 5000).unref();
-}
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+gracefulStop({
+    name: 'Trade', server, deadlineExitCode: 0,
+    stop: [() => ctx.worker.stop()],
+    close: [() => ctx.outbox.stop(), () => ctx.store.close()],
+});
 })().catch((err) => { console.error('[Trade] failed to start:', err); process.exit(1); });
