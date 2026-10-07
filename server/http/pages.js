@@ -14,6 +14,7 @@
  */
 const express = require('express');
 const ovServe = require('openvibe-shared/serve');
+const showcase = require('openvibe-shared/showcase');
 const frame = require('openvibe-shared/frame');
 const seo = require('openvibe-publishing/seo');
 const cache = require('openvibe-shared/cache-policy');
@@ -45,6 +46,7 @@ function createPages(ctx) {
             title: null, canonical, decision: listing(pageNo === 1 ? '/' : `/?page=${pageNo}`),
             // The home page carries the site's ai-summary meta and WebPage JSON-LD (v1.3.0 forwards it).
             summary: pageNo === 1 ? SITE_SUMMARY : null,
+            styles: pageNo === 1 ? [showcase.STYLESHEET] : [],
             feeds: [{ type: 'rss', href: '/feed.xml', title: 'Recent documents (RSS)' }, { type: 'atom', href: '/atom.xml', title: 'Recent documents (Atom)' }, { type: 'json', href: '/feed.json', title: 'Recent documents (JSON Feed)' }],
             jsonLd: [seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en' })],
             body: views.home({ page, recent, urls, sync: await sync.state(), pager }),
