@@ -12,6 +12,7 @@
  *   - AI context carries its disclosure; the disclaimer is in the layout on every page
  */
 const { html, raw, breadcrumbsHtml, paginationHtml } = require('openvibe-publishing/ssr');
+const showcase = require('openvibe-shared/showcase');
 
 const ISO = (v) => (v == null ? null : (typeof v === 'number' ? new Date(v).toISOString() : String(v)));
 
@@ -41,6 +42,24 @@ function notice(n) {
 
 // ── Home ─────────────────────────────────────────────────────────────────────
 
+/** Page 1 of the front page opens with what OpenVibe.Trade is for (openvibe-shared/showcase). */
+function tradeShowcase() {
+    return showcase.hero({
+        eyebrow: 'OpenVibe.Trade',
+        title: 'Market information that shows', accent: 'its source',
+        lede: 'Instruments, filings and market observations from named sources. Every value shows when it was observed, when it was retrieved and which source stated it; when a source falls behind, its data is marked stale and never replaced with a guess.',
+        actions: [{ label: 'Find an instrument', href: '#find', primary: true }, { label: 'Source freshness', href: '/sources' }],
+    }) + showcase.features({
+        title: 'What is here',
+        items: [
+            { icon: 'ov:search', title: 'Find an instrument', text: 'By ticker, SEC CIK or company name. One match takes you straight there; several are listed, never guessed between.' },
+            { icon: 'ov:history', title: 'Values with their times', text: 'Each observation keeps the exact value as stated, its source, and when it was observed and retrieved. Stale data carries a badge.' },
+            { icon: 'ov:docs', title: 'Filings and documents', text: 'Documents gathered by OpenVibe.Sources with their publication and retrieval dates, and feeds in RSS, Atom and JSON.' },
+            { icon: 'ov:bell', title: 'Watchlists and alert rules', text: 'Private to you when signed in. Context on an instrument is written by an editor, or drafted by AI and reviewed by a person, and says which.' },
+        ],
+    });
+}
+
 function home({ page, recent, urls, sync, pager }) {
     const rows = page.instruments.map((i) => html`<tr>
         <td><a href="${urls.path.instrument(i)}"><strong>${i.symbol}</strong></a></td>
@@ -49,11 +68,11 @@ function home({ page, recent, urls, sync, pager }) {
     const docs = recent.map((r) => html`<li><a href="${urls.path.instrument(r.instrument)}#${r.document.id}">${r.instrument.symbol}</a>
         ${r.document.form_type ? html`<span class="badge">${r.document.form_type}</span>` : ''} ${r.document.title || r.document.filer_name || 'Untitled document'}
         — ${r.document.published_at ? html`published ${when(r.document.published_at)}` : html`<span class="muted">no publication date stated</span>`}, retrieved ${when(r.document.retrieved_at)}</li>`);
+    const first = !pager || pager.page === 1;
     return html`
-<h1>Sourced market information</h1>
-<p class="lede">Instruments with the observations and filings that sources published about them. Every value shows when it was observed, when it was retrieved and which source stated it. When a source falls behind, its data is marked stale — it is never replaced with a guess.</p>
+${first ? raw(tradeShowcase()) : html`<h1>Sourced market information</h1>`}
 <p class="muted">What this site is not: there is no order entry, no brokerage, no custody of money or assets, no marketplace and no personal recommendation here.</p>
-<form class="search" method="get" action="/resolve" role="search">
+<form class="search" id="find" method="get" action="/resolve" role="search">
   <label for="q">Find an instrument by ticker, CIK or company name</label>
   <input id="q" name="q" type="search" maxlength="200" required>
   <button type="submit">Find</button>
