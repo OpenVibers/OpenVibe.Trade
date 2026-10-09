@@ -128,7 +128,7 @@ deployment has no instruments (editors add them), no documents until the source 
 | `/terms`, `/privacy`, `/dmca` | openvibe-shared legal pages |
 | `/auth/*` | sign-in; the same session layer as Blog and Community |
 | `/api/health`, `/api/ready`, `/release.json`, `POST /release-metrics`, `/metrics` | health, readiness, release, open tabs' update reports (counted in `/metrics`), metrics (loopback only) |
-| `POST /internal/events` | signed OpenVibe.Events deliveries (`sources.*`), host-local |
+| `POST /internal/events` | signed OpenVibe.Events deliveries (`sources.*`, and the two ADR-033 account events), host-local |
 
 ### Discoverability (roadmap §32)
 
@@ -195,6 +195,22 @@ decided with the contracts library's matching rule (`server/auth/capabilities.js
 Consumed: `sources.item.created|updated|removed` and `sources.fetch.failed` through the signed
 webhook, as a wake-up for the cursor sync (the webhook is not durable truth; the sync is).
 
+### Account export and deletion (ADR-033)
+
+`network.account.export_requested` and `network.account.deleted` arrive at `POST /internal/events` and are answered by
+`server/domain/account-data.js` (`openvibe-sdk/account-data`).
+
+- **Export:** the person's watchlists and their items, alert rules and deliveries, context drafts, the revisions they
+  wrote, the observations they recorded by hand, and their reviews.
+- **Deleted:** watchlists (items cascade), alert rules with their deliveries, and drafts.
+- **Made authorless:** instruments, aliases and purges they made. Context revisions and observations stay append-only:
+  only inside the erasure transaction (`trade.account_erasure`, migration `0004_account_erasure.sql`) may a revision's
+  author become NULL and their id leave `meta.authorship.authors`, or an observation's `recorded_by` become `deleted`.
+  The text, the values and their provenance never change.
+- **Kept, counted as retained:** reviews, since a person's approval is what lets reviewed text stay published.
+- **Subscriptions:** the two are created at boot when missing (needs `EVENTS_URL` and `TRADE_EVENTS_WEBHOOK_SECRET`).
+- **Receipts:** `account_data_events` keeps one per export and deletion.
+
 ### OpenVibe.AI seam (`trade.summarize_market_context`)
 
 1. The AI (or its caller) reads `GET /api/v1/instruments/:symbol/context/input` — the workflow input
@@ -242,7 +258,8 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
 Each grant is `[client, capability, audience]`:
 
 - `[trade, events.event.publish, openvibe.events]`
-- `[trade, events.subscription.manage, openvibe.events]`
+- `[trade, events.subscription.manage, openvibe.events]` (also the account subscriptions at boot)
+- `[trade, network.account.export.contribute, openvibe.network]` and `[trade, network.account.deletion.confirm, openvibe.network]` (ADR-033; granted last, once this release is live)
 - `[trade, sources.item.read, openvibe.sources]`
 - `[trade, sources.source.read, openvibe.sources]`
 - For OpenVibe.AI to deliver drafts: `[ai, trade.context.read, openvibe.trade]` and

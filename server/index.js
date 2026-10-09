@@ -8,6 +8,7 @@
  * store, and exits 0 (the 5 s family's deadline exit code).
  */
 const { gracefulStop } = require('openvibe-sdk/service');
+const { startSubscriptions } = require('openvibe-sdk/account-data');
 const { createApp } = require('./app');
 
 (async () => {
@@ -21,10 +22,16 @@ const server = app.listen(config.port, config.host, () => {
 server.keepAliveTimeout = 65_000;
 ctx.outbox.start();
 ctx.worker.start();
+// The two account subscriptions at OpenVibe.Events (ADR-033), created when missing; off without EVENTS_URL,
+// TRADE_EVENTS_WEBHOOK_SECRET or the client secret. The sources.* one stays scripts/subscribe.js's.
+const subscriptions = startSubscriptions({
+    eventsUrl: config.events.url, endpoint: `http://127.0.0.1:${config.port}/internal/events`, secret: String(config.events.webhookSecret || '').split(',')[0].trim(),
+    networkInternalUrl: config.networkInternalUrl, clientId: config.oauth.clientId, clientSecret: config.oauth.clientSecret,
+});
 
 gracefulStop({
     name: 'Trade', server, deadlineExitCode: 0,
-    stop: [() => ctx.worker.stop()],
+    stop: [() => ctx.worker.stop(), () => { if (subscriptions) subscriptions.stop(); }],
     close: [() => ctx.outbox.stop(), () => ctx.store.close()],
 });
 })().catch((err) => { console.error('[Trade] failed to start:', err); process.exit(1); });

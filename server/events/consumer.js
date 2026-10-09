@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * POST /internal/events — signed OpenVibe.Events webhook deliveries (subscription topic sources.*).
+ * POST /internal/events — signed OpenVibe.Events webhook deliveries (subscription topic sources.*, and
+ * network.account.export_requested / network.account.deleted for ADR-033, answered by domain/account-data.js).
  *
  * The signature check, the ±300 s window and the exactly-once inbox are the ingest chassis
  * (openvibe-publishing/ingest, createEventConsumer); this route only maps its result onto HTTP and
@@ -14,8 +15,13 @@ const { createEventConsumer } = require('openvibe-publishing/ingest');
 const { http } = require('openvibe-contracts');
 
 const WAKE_RE = /^sources\.(item\.(created|updated|removed)|fetch\.failed)$/;
+const { TOPICS: ACCOUNT_TOPICS } = require('openvibe-sdk/account-data');
 
-function createWebhook({ store, config, ingest, log = console }) {
+/**
+ * accountData + accountSend: account export and deletion and its sender to Network. A failure throws, the inbox receipt
+ * rolls back and Events redelivers; account-data keeps its own receipt per export and deletion id.
+ */
+function createWebhook({ store, config, ingest, log = console, accountData = null, accountSend = null }) {
     const router = express.Router();
     const consumer = createEventConsumer({ db: store.db, secrets: config.events.webhookSecret, consumer: 'sources', now: store.now });
 
@@ -25,6 +31,11 @@ function createWebhook({ store, config, ingest, log = console }) {
         let r;
         try {
             r = await consumer.apply(raw, req.headers, async (e) => {
+                if (ACCOUNT_TOPICS.includes(e.event_type)) {
+                    if (!accountData || !accountSend) throw new Error('account export and deletion are not configured');
+                    await accountData.apply(e, { send: accountSend });
+                    return false;
+                }
                 const wake = WAKE_RE.test(e.event_type);
                 if (wake) ingest.run().catch((err) => log.warn('[Trade] ingest after webhook failed:', err.message));
                 return wake;

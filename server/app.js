@@ -33,6 +33,8 @@ const configLib = require('./config');
 const { openStore } = require('./db');
 const { createViewerResolver } = require('./auth/viewer');
 const { createWebhook } = require('./events/consumer');
+const accountDataLib = require('./domain/account-data');
+const { createNetworkSender } = require('openvibe-sdk/account-data');
 const { createUrls } = require('./domain/urls');
 const { createInstruments } = require('./domain/instruments');
 const { createFreshness } = require('./domain/source-status');
@@ -164,7 +166,12 @@ async function createApp(opts = {}) {
     app.use(machine);
 
     // ── Signed OpenVibe.Events deliveries (before any body parser) ──
-    app.use(createWebhook({ store, config, ingest: ctx.sync, log }).router);
+    // Account export and deletion (ADR-033, domain/account-data.js), pushed to Network with this service's own token.
+    ctx.accountData = accountDataLib.create({ db: store.db, log });
+    ctx.accountSend = opts.accountSend || (config.oauth.clientSecret
+        ? createNetworkSender({ networkInternalUrl: config.networkInternalUrl, clientId: config.oauth.clientId, clientSecret: config.oauth.clientSecret, fetch: fetchImpl })
+        : null);
+    app.use(createWebhook({ store, config, ingest: ctx.sync, log, accountData: ctx.accountData, accountSend: ctx.accountSend }).router);
 
     // ── Sign-in (OAuth2 client of OpenVibe.Network) ─────────
     app.use('/auth/', rateLimit({ windowMs: 15 * 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));
