@@ -8,14 +8,14 @@
   "port": 4860,
   "domain": "openvibe.trade",
   "scope": "informational only (ADR-025): no custody, no order execution, no escrow, no listings between users, no personalised advice",
-  "contracts": "openvibe-contracts v0.112.0",
+  "contracts": "openvibe-contracts v0.122.1",
   "sdk": "openvibe-sdk v0.37.0",
   "shared": "openvibe-shared v2.17.0",
   "packages": [
-    "openvibe-contracts v0.97.0",
+    "openvibe-contracts v0.122.1",
     "openvibe-publishing v1.3.0",
-    "openvibe-shared v2.13.0",
-    "openvibe-sdk v0.26.0"
+    "openvibe-shared v2.17.0",
+    "openvibe-sdk v0.37.0"
   ],
   "capabilities": [
     "trade.instrument.resolve",
