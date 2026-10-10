@@ -413,7 +413,7 @@ Part of the [OpenVibe network](https://openvibe.network). Built in the open by [
 
 <!-- versions:start -->
 - openvibe-contracts: v0.127.0
-- openvibe-sdk: v0.37.0
+- openvibe-sdk: v0.37.2
 - openvibe-shared: v2.21.1
 - openvibe-publishing: v1.3.0
 <!-- versions:end -->
