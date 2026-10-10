@@ -2,12 +2,12 @@
 
 > Informational watchlists, sourced market context and alerts. No custody, no order execution.
 
-**Status:** alpha (roadmap Wave 19). The service runs and its tests pass. It is **deployed
-internally, not launched**: it runs on the production host on 127.0.0.1:4860 only (release
-`9a55644`; `/api/ready` reports `degraded: ["freshness"]` because there is no feed), with an empty
-database (0 instruments), and `openvibe.trade` still shows its placeholder from OpenVibe.Sites. Its
-capabilities and service manifest are registered in openvibe-contracts v0.97.0. No market data
-feed is configured yet (see "What it shows today").
+**Status:** alpha (roadmap Wave 19). The service runs, its tests pass, and it is **public at its
+domain, [openvibe.trade](https://openvibe.trade), since 2026-10-09**, after an independent
+pre-launch security review whose fixes shipped first. `/api/ready` reports `degraded:
+["freshness"]` because there is no feed, and the database is empty (0 instruments) until editors add
+the first ones. Its capabilities and service manifest are registered in openvibe-contracts. No
+market data feed is configured yet (see "What it shows today").
 **Domain:** `openvibe.trade` · **Port:** 4860 · **Service id:** `trade`
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §12.11;
 roadmap Wave 19, §15.13, §29, §32. **Binding decision:** ADR-025 (marketplace and commerce scope).
@@ -286,25 +286,25 @@ Each grant is `[client, capability, audience]`:
 
 ## Launch rule
 
-This repository alone does not make the product live. `openvibe.trade` keeps its placeholder on
-[OpenVibers/OpenVibe.Sites](https://github.com/OpenVibers/OpenVibe.Sites) until all of plan §12.12
-exists. Status against each point:
+The launch rule (plan §12.12) is met: `openvibe.trade` went public on 2026-10-09, after an
+independent pre-launch security review whose fixes shipped first.
+[OpenVibers/OpenVibe.Sites](https://github.com/OpenVibers/OpenVibe.Sites) was deleted (plan T11), so
+the domain serves the service itself. Status against each point:
 
 1. **Runtime, health, readiness, observability:** done.
 2. **Canonical identity and auth:** done (Network SSO, subjects, service tokens).
 3. **SSR public routes useful without JS:** done.
-4. **Persistence and end-to-end workflows:** done in tests and deployed on the host (loopback only,
-   empty database); in production there is no market data source yet and the filings source is
-   disabled in Sources (see "What it shows today").
-5. **Capability and event registration against OpenVibe.Contracts:** done (openvibe-contracts
-   v0.97.0).
+4. **Persistence and end-to-end workflows:** done in tests and live on the host (empty database
+   until editors add instruments); in production there is no market data source yet and the filings
+   source is disabled in Sources (see "What it shows today").
+5. **Capability and event registration against OpenVibe.Contracts:** done.
 6. **Migration and seed strategy, threat review, sitemap/robots/feed behaviour:** done. Nothing to
    migrate (no current implementation); no seed (editors add instruments); threat review below.
 7. **Acceptance tests:** done.
 
-The launch release removes `openvibe.trade` from `OpenVibe.Sites/sites.json`, switches routing
-(nginx vhost, DNS, TLS), flips the Network hub entry and registers maturity in the ecosystem
-registry, atomically. A placeholder never counts as an implemented service.
+The launch release removed `openvibe.trade` from `OpenVibe.Sites/sites.json` and switched routing
+(nginx vhost, DNS, TLS), flipped the Network hub entry and registered maturity in the ecosystem
+registry, atomically, on 2026-10-09. OpenVibe.Sites is deleted (plan T11).
 
 ## Security and threat review
 
@@ -404,8 +404,8 @@ First install (done once; kept for a rebuild):
 8. **Data:** editors add instruments at `/editor`. Filings appear once `sec-xbrl-filings` is enabled
    in Sources (after a person verifies its terms); numbers appear only once a market data source
    exists and states them.
-9. **Launch:** in the same release, remove `openvibe.trade` from OpenVibe.Sites and flip the Network
-   hub entry (see the launch rule).
+9. **Launch:** done on 2026-10-09: `openvibe.trade` was removed from OpenVibe.Sites (now deleted,
+   plan T11) and the Network hub entry flipped (see the launch rule).
 
 ---
 
