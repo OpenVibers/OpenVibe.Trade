@@ -74,9 +74,14 @@ Other tables in the same database:
   words normalised). Several instruments with the same name → `ambiguous`, candidates listed, none
   chosen. No fuzzy or prefix matching. `/i/aapl` and a ticker alias answer 301 to `/i/AAPL`.
 - **Observations.** Recorded by a first-party feed (`POST /api/v1/observations`,
-  `trade.observation.write`) or from Sources items that state a value (`fields.metric`, `value`,
-  `unit`, `observed_at`, a symbol or CIK). `observed_at` and `retrieved_at` are required and never
-  defaulted; a replay is `200 created:false`; the same reference with a different value is `409`.
+  `trade.observation.write`) or from Sources items that state a value: the explicit `fields.metric`,
+  `value`, `unit`, `observed_at` (a symbol or CIK), or a rate the real trade sources state — the api
+  adapter's `fields.rate` with `base`/`quote` (`frankfurter-eur-rates`), or a `<rate> <QUOTE> = 1
+  <BASE>` reference-rate title (`ecb-euro-reference-rates`, the value and currencies read as stated).
+  A bare date is that day at 00:00 UTC. `observed_at` and `retrieved_at` are required and never
+  defaulted; a replay is `200 created:false`; the same reference with a different value is `409`. A
+  rate's quote currency with no instrument yet registers one (kind `currency`, symbol/name the stated
+  ISO code); every other item must match an editor-created instrument or it is skipped and counted.
   **No observation → no number:** the page says "No observations have been recorded for X, so no
   number is shown."
 - **Freshness.** Per source: fresh only while the last successful fetch is younger than the source's
@@ -90,7 +95,10 @@ Other tables in the same database:
   URL: CIK and accession come from the URL, the form type from the item summary (the feed's
   `<description>`) when it looks like one, the filer from the title. A filing without a date says
   "not stated by the source". Items that match no instrument are skipped and counted, never stored.
-  A Sources removal hides the document (the row stays as the record).
+  A Sources removal hides the document (the row stays as the record). If the sync ever advances the
+  cursor past items that were skipped and later fixed, rewind it with
+  `node scripts/rewind-sync-cursor.js` (dry run; `--apply` to move it) — re-reading is idempotent per
+  item revision.
 - **Watchlists.** Private per person; plain forms and the API. Anyone else gets 404.
 - **Alerts.** `threshold` rules fire on a crossing (armed → fired → re-armed when a newer
   observation no longer meets the condition; late observations never fire; unit and currency must

@@ -16,6 +16,10 @@
  *        filing / keyed item     → a document (domain/documents.js; new → document alerts)
  *        no instrument matches   → skipped (counted by reason; nothing is created for it)
  *
+ * The one instrument the sync ever creates is a currency a rate states (frankfurter/ECB name the
+ * quote, e.g. USD): an ISO code needs no editorial naming, and a rate with no instrument to hang on
+ * would otherwise never appear. Every other item still requires an editor-created instrument.
+ *
  * A failed call is recorded in trade_sync_state (last_error) and changes nothing else; freshness
  * then decays on Trade's own clock, so pages show the data as stale instead of pretending.
  */
@@ -66,12 +70,36 @@ function createIngest({ store, config, ctx, sources, log = console }) {
         return null;
     }
 
+    const CURRENCY_RE = /^[A-Z]{3}$/;
+    // The English name of an ISO 4217 code ("US Dollar"), from the runtime's ICU data; the code itself when unknown.
+    const currencyNames = new Intl.DisplayNames(['en'], { type: 'currency', fallback: 'code' });
+    const str1 = (v) => (v == null || v === '' ? null : (String(v).trim() || null));
+
+    /**
+     * The instrument a mapped item belongs to. A rate that states a currency the site does not track
+     * yet registers it (kind currency, symbol the stated ISO code, name its ISO 4217 English name, no author) — a code needs
+     * no editorial judgement and a rate with nowhere to hang never shows. Everything else must match
+     * an instrument an editor created.
+     */
+    async function instrumentFor(m) {
+        const found = await resolveKeys(m.keys);
+        if (found) return found;
+        const code = m.type === 'observation' && m.observation.metric === 'rate' ? str1(m.observation.currency) : null;
+        if (!code || !CURRENCY_RE.test(code) || code !== m.keys.symbol) return null;
+        try {
+            return await ctx.instruments.create({ symbol: code, name: currencyNames.of(code), kind: 'currency' }, null);
+        } catch (err) {
+            if (err && err.status === 409) return await resolveKeys(m.keys);   // raced or alias holder
+            throw err;
+        }
+    }
+
     /** Apply one item. → a counter name. Inside the page transaction. */
     async function applyItem(item) {
         if (item.removed) return await ctx.documents.remove(item.id, { at: parseTime(item.removed.at), reason: item.removed.reason }) ? 'documents_removed' : 'removed_unknown';
         const m = mapItem(item);
         if (m.type === 'skip') return `skipped_${m.reason}`;
-        const instrument = await resolveKeys(m.keys);
+        const instrument = await instrumentFor(m);
         if (!instrument) return 'skipped_no_matching_instrument';
         if (instrument.status !== 'active') return 'skipped_archived_instrument';
         if (m.type === 'observation') {
