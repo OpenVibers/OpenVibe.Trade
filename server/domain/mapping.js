@@ -4,9 +4,16 @@
  * From an OpenVibe.Sources item (sources.item@1, category trade) to what Trade records. Pure and
  * deterministic; it reads only what the item states and never fills a gap.
  *
- *   observation   the item states a value: fields { metric, value, unit, observed_at } plus a
- *                 symbol/ticker or CIK (currency, period, max_age_sec optional). An item without its
- *                 own observation time is skipped — the retrieval time is NOT an observation time.
+ *   observation   the item states a value, in one of three shapes:
+ *                 - the explicit contract: fields { metric, value, unit, observed_at } plus a
+ *                   symbol/ticker or CIK (currency, period, max_age_sec optional);
+ *                 - a structured rate (the Sources api adapter, e.g. frankfurter-eur-rates):
+ *                   fields.rate with fields.base and a quote currency (fields.quote/target_currency,
+ *                   else the item's identity, which the adapter sets to the quote);
+ *                 - a reference-rate article (the ECB feed): a "<rate> <QUOTE> = 1 <BASE> …" title,
+ *                   the value and currencies read from that stated title.
+ *                 An item without its own observation time is skipped — the retrieval time is NOT an
+ *                 observation time. A bare date the source states (YYYY-MM-DD) is that day, 00:00 UTC.
  *   document      an SEC EDGAR filing: the canonical URL is under
  *                 sec.gov/Archives/edgar/data/<CIK>/<accession>/ (the xbrlrss feed's index links),
  *                 so the CIK and accession number come from the URL; the form type is the item's
@@ -16,10 +23,13 @@
  *                 (kind 'record' for record items, else 'article').
  *   skip          everything else, with a reason (counted in the sync state, never guessed at).
  */
-const { parseTime, parseDecimal } = require('./helpers');
+const { parseTime, parseDecimal, iso } = require('./helpers');
 
 const SEC_PATH_RE = /^https?:\/\/(?:www\.)?sec\.gov\/Archives\/edgar\/data\/(\d{1,10})\/(\d{18})(?:\/|$)/i;
 const FORM_RE = /^[A-Z0-9][A-Z0-9 \-/.]{0,19}$/;
+// "1.1206 USD = 1 EUR 2026-10-09 ECB Reference rate" → rate, quote, base, read as stated.
+const RATE_TITLE_RE = /^\s*(\d{1,20}(?:\.\d{1,12})?)\s+([A-Z]{3})\s*=\s*1\s+([A-Z]{3})(?:\s|$)/;
+const BARE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function formType(v) {
     if (typeof v !== 'string') return null;
@@ -37,6 +47,50 @@ function filerName(title) {
     return s || null;
 }
 
+/** A scalar as a trimmed string, or null. */
+function str1(v) { return v == null || v === '' ? null : (String(v).trim() || null); }
+
+/** A ticker-like identity ("USD"): upper-case it, else null (a URL or guid is not an instrument key). */
+function tickerish(v) {
+    return typeof v === 'string' && /^[A-Za-z][A-Za-z0-9.-]{0,15}$/.test(v.trim()) ? v.trim().toUpperCase() : null;
+}
+
+/** A time the source states: a full date-time with a zone, or a bare date (→ that day, 00:00 UTC). */
+function statedTime(v) {
+    const t = parseTime(v);
+    if (t != null) return t;
+    if (typeof v === 'string' && BARE_DATE_RE.test(v.trim())) {
+        const d = Date.parse(`${v.trim()}T00:00:00Z`);
+        return Number.isFinite(d) ? d : null;
+    }
+    return null;
+}
+
+/**
+ * The observation an item states, or null: the explicit contract, a structured `fields.rate`, or a
+ * reference-rate title. `symbol` is the instrument key the item itself names (the quote currency for
+ * a rate). Nothing here is invented — a missing field means this shape does not apply.
+ */
+function statedObservation(item, f) {
+    if (item.kind === 'observation' || (f.metric != null && f.value != null)) {
+        return { metric: f.metric, value: f.value, unit: f.unit, currency: f.currency == null ? null : f.currency,
+            period: f.period, observed_at: f.observed_at, max_age_sec: f.max_age_sec, symbol: null };
+    }
+    if (f.rate != null) {
+        const quote = str1(f.quote) || str1(f.target_currency) || str1(f.symbol) || str1(f.ticker) || tickerish(item.identity);
+        const base = str1(f.base) || str1(f.base_currency);
+        if (!quote || !base) return null;
+        return { metric: 'rate', value: f.rate, unit: quote, currency: quote, period: null,
+            observed_at: f.observed_at != null ? f.observed_at : f.date, max_age_sec: f.max_age_sec, symbol: quote };
+    }
+    const m = RATE_TITLE_RE.exec(String(item.title || ''));
+    if (m) {
+        return { metric: 'rate', value: m[1], unit: m[2], currency: m[2], period: null,
+            observed_at: f.observed_at != null ? f.observed_at : item.published_at, max_age_sec: f.max_age_sec, symbol: m[2] };
+    }
+    return null;
+}
+
 /** → { type: 'observation', keys, observation } | { type: 'document', keys, document } | { type: 'skip', reason } */
 function mapItem(item) {
     if (!item || typeof item !== 'object' || !item.id) return { type: 'skip', reason: 'malformed_item' };
@@ -49,17 +103,20 @@ function mapItem(item) {
     const retrievedAt = parseTime(prov.retrieved_at);
     if (retrievedAt == null) return { type: 'skip', reason: 'no_retrieval_time' };
 
-    if (item.kind === 'observation' || (f.metric != null && f.value != null)) {
-        if (!keys.cik && !keys.symbol) return { type: 'skip', reason: 'no_instrument_key' };
-        if (f.metric == null || f.unit == null || !parseDecimal(f.value)) return { type: 'skip', reason: 'incomplete_observation' };
-        if (parseTime(f.observed_at) == null) return { type: 'skip', reason: 'no_observation_time' };
+    const obs = statedObservation(item, f);
+    if (obs) {
+        const symbol = obs.symbol || keys.symbol;
+        if (!keys.cik && !symbol) return { type: 'skip', reason: 'no_instrument_key' };
+        if (obs.metric == null || obs.unit == null || !parseDecimal(obs.value)) return { type: 'skip', reason: 'incomplete_observation' };
+        const observedAt = statedTime(obs.observed_at);
+        if (observedAt == null) return { type: 'skip', reason: 'no_observation_time' };
         return {
-            type: 'observation', keys,
+            type: 'observation', keys: { cik: keys.cik, symbol },
             observation: {
-                metric: f.metric, value: f.value, unit: f.unit, currency: f.currency == null ? null : f.currency,
-                period: f.period == null ? null : String(f.period), observed_at: f.observed_at, retrieved_at: prov.retrieved_at,
+                metric: obs.metric, value: obs.value, unit: obs.unit, currency: obs.currency == null ? null : obs.currency,
+                period: obs.period == null ? null : String(obs.period), observed_at: iso(observedAt), retrieved_at: prov.retrieved_at,
                 source_key: item.source_key, source_item_id: item.id, source_url: item.canonical_url || null,
-                source_ref: `${item.id}#r${item.revision}:${f.metric}`, max_age_sec: f.max_age_sec == null ? null : f.max_age_sec,
+                source_ref: `${item.id}#r${item.revision}:${obs.metric}`, max_age_sec: obs.max_age_sec == null ? null : obs.max_age_sec,
             },
         };
     }
@@ -88,4 +145,4 @@ function mapItem(item) {
     return { type: 'skip', reason: 'no_instrument_key' };
 }
 
-module.exports = { mapItem, formType, filerName, accessionOf };
+module.exports = { mapItem, formType, filerName, accessionOf, statedTime };
