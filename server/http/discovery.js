@@ -10,7 +10,7 @@
  *   GET /sitemap.xml                       sitemap index
  *   GET /sitemaps/instruments.xml          INDEXABLE instrument pages only (the gate decides:
  *                                          person-reviewed context, no stale price); lastmod = the
- *                                          context's real publication time
+ *                                          latest instrument, observation or document change
  *   GET /feed.xml | /atom.xml | /feed.json recent public documents across instruments
  *   GET /i/:symbol/documents.xml|.atom|.json  one instrument's documents
  *
@@ -103,18 +103,29 @@ function createDiscovery(ctx) {
         }));
     });
 
+    async function pageChanges() {
+        const rows = await store.db.prepare(`SELECT instrument_id, MAX(changed_at) AS changed_at FROM (
+            SELECT instrument_id, recorded_at AS changed_at FROM trade_market_observations
+            UNION ALL SELECT instrument_id, updated_at AS changed_at FROM trade_source_documents
+        ) changes GROUP BY instrument_id`).all();
+        return new Map(rows.map((r) => [r.instrument_id, r.changed_at]));
+    }
+    const pageLastmod = (instrument, changes) => Math.max(instrument.updated_at || 0, instrument.context_published_at || 0, changes.get(instrument.id) || 0);
+
     define(router, 'get', '/sitemap.xml', 'sitemapIndex', async (_req, res) => {
         const active = await instruments.active();
         const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
-        const times = active.filter((i, n) => decisions[n].indexable && i.context_published_at).map((i) => i.context_published_at);
+        const changes = await pageChanges();
+        const times = active.filter((i, n) => decisions[n].indexable).map((i) => pageLastmod(i, changes)).filter(Boolean);
         const newest = times.length ? new Date(Math.max(...times)).toISOString() : null;
         xml(res, seo.sitemapIndex([{ loc: abs('/sitemaps/instruments.xml'), ...(newest ? { lastmod: newest } : {}) }]));
     });
 
     define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {
+        const changes = await pageChanges();
         const entries = (await Promise.all((await instruments.active()).map(async (i) => ({
             loc: urls.instrument(i),
-            ...(i.context_published_at ? { lastmod: new Date(i.context_published_at).toISOString() } : {}),
+            ...(pageLastmod(i, changes) ? { lastmod: new Date(pageLastmod(i, changes)).toISOString() } : {}),
             decision: await indexing.decide(i),
         }))));
         xml(res, seo.sitemap(entries).files[0]);
