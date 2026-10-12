@@ -138,13 +138,15 @@ deployment has no instruments (editors add them), no documents until the source 
 | `/api/health`, `/api/ready`, `/release.json`, `POST /release-metrics`, `/metrics` | health, readiness, release, open tabs' update reports (counted in `/metrics`), metrics (loopback only) |
 | `POST /internal/events` | signed OpenVibe.Events deliveries (`sources.*`, and the two ADR-033 account events), host-local |
 
+Sitemap entries carry lastmod from each instrument's latest recorded change.
+
 ### Discoverability (roadmap §32)
 
 - Instrument pages go through the `openvibe-publishing/seo` gate. Financial information is a
   **sensitive** category: a page is `noindex` (`unreviewed_sensitive`) until a person-reviewed
   context is published, `noindex` when its newest monetary observation is older than
   `TRADE_PRICE_MAX_AGE_SEC` (`stale_price`), and `thin` below `TRADE_GATE_MIN_WORDS` of context.
-- The sitemap lists indexable instrument pages only, `lastmod` = the context's real publication time.
+- The sitemap lists indexable instrument pages only, `lastmod` = the instrument's latest recorded change.
 - JSON-LD: `WebPage` (+ `Corporation` with `tickerSymbol` for equities) and breadcrumbs, from real
   fields only. No price, offer, rating or invented date.
 - Every instrument page has a JSON twin with the same data (`/i/:symbol.json`).

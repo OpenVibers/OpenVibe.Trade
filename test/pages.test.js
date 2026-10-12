@@ -5,6 +5,17 @@
  * endpoints answer; the historical marketplace branch is recorded as an open question, not built.
  */
 const assert = require('assert');
+
+function assertSitemapLastmods(xml, tag = 'url') {
+    const entries = [...xml.matchAll(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g'))];
+    for (const [, body] of entries) {
+        const match = /<lastmod>(\d{4}-\d{2}-\d{2})<\/lastmod>/.exec(body);
+        assert.ok(match, body);
+        assert.strictEqual(new Date(match[1]).toISOString().slice(0, 10), match[1]);
+    }
+    return entries;
+}
+
 const fs = require('fs');
 const path = require('path');
 const { boot, check, done } = require('./helpers/boot');
@@ -72,6 +83,7 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(/automated-consumer policy/.test(robots));
         assert.ok((await t.get('/sitemap.xml')).text.includes('https://openvibe.trade/sitemaps/instruments.xml'));
         assert.ok(!(await t.get('/sitemaps/instruments.xml')).text.includes('<loc>'), 'no indexable instrument yet');
+        assertSitemapLastmods((await t.get('/sitemaps/instruments.xml')).text);
         assert.ok((await t.get('/llms.txt')).text.startsWith('# OpenVibe.Trade'));
     });
 
@@ -122,6 +134,14 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         await t.instrument({ symbol: 'OTHR', name: 'Other Co' });
         const pub = await t.get('/editor/i/ACME/context', { as: t.editor, form: { _csrf: t.csrf(t.editor), body: `Acme's price is stated by the source. ${WORDS(70)}`, cite: `observation:${observation.id}`, publish: '1' } });
         assert.ok(/n=context_published/.test(pub.headers.get('location')), 'the context published');
+        const map = (await t.get('/sitemaps/instruments.xml')).text;
+        assert.strictEqual(assertSitemapLastmods(map).length, 1);
+        const instrument = await t.ctx.store.db.prepare("SELECT id, updated_at, context_published_at FROM trade_instruments WHERE symbol = 'ACME'").get();
+        const observationTime = await t.ctx.store.db.prepare('SELECT MAX(recorded_at) AS at FROM trade_market_observations WHERE instrument_id = ?').get(instrument.id);
+        const documentTime = await t.ctx.store.db.prepare('SELECT MAX(updated_at) AS at FROM trade_source_documents WHERE instrument_id = ?').get(instrument.id);
+        const expected = new Date(Math.max(instrument.updated_at, instrument.context_published_at || 0, observationTime.at || 0, documentTime.at || 0)).toISOString().slice(0, 10);
+        assert.ok(map.includes(`<loc>https://openvibe.trade/i/ACME</loc><lastmod>${expected}</lastmod>`));
+        assertSitemapLastmods((await t.get('/sitemap.xml')).text, 'sitemap');
         const after = await t.get('/llms-full.txt');
         assert.ok(after.text.includes('https://openvibe.trade/i/ACME'));
         assert.ok(after.text.includes('### ACME — Acme Corp'));
