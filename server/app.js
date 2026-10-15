@@ -125,8 +125,8 @@ async function createApp(opts = {}) {
     app.locals.metrics = metrics.registry;
     // Request telemetry (openvibe-sdk/service, plan T1): one aggregated sample per route template, method and status
     // class each flush, stored in this service's telemetry_samples table; /shared, health, readiness and /metrics make
-    // none. server/index.js flushes it every 15 s and on stop, and keeps the table to 30 days.
-    ctx.telemetry = createHttpTelemetry({ service: 'trade', sink: opts.telemetrySink || createPgTelemetrySink({ db: store.db, log }), skipPrefixes: ['/shared'] });
+    // none. server/index.js flushes it every minute and on stop, and keeps the table to 14 days.
+    ctx.telemetry = createHttpTelemetry({ service: 'trade', sink: opts.telemetrySink || createPgTelemetrySink({ db: store.db, log }), skipPrefixes: ['/shared'], intervalMs: 60_000 });
     app.use(ctx.telemetry.middleware());
     app.locals.ctx = ctx;
     // Per-actor limits (http/actor-limits.js) on /api/v1 and the forms, counted once each router resolved
