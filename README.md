@@ -33,7 +33,7 @@ The nine charter tables (roadmap §15.13) live in Trade's own PostgreSQL databas
 
 | Charter table | What it is |
 |---|---|
-| `trade_instruments` | Symbol (canonical, upper case), name, kind, exchange, SEC CIK, trading currency, status, and which context revision is published. |
+| `trade_instruments` | Symbol (canonical, upper case), name, kind, exchange, SEC CIK, trading currency, status, and which context revision is published. Companies come from SEC's own ticker list (Sources `sec-company-tickers`, created by `svc:trade`: one per CIK, other share classes as ticker aliases); currencies from the rates; anything else from an editor. |
 | `trade_instrument_aliases` | Tickers, CIKs and names with their normalised resolution key. A ticker or CIK names exactly one instrument (unique index); a name may be shared (resolution is then ambiguous). |
 | `trade_watchlists` | Private, one owner (`usr_…`). |
 | `trade_watchlist_items` | Instruments on a watchlist, with an optional note. |

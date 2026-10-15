@@ -91,7 +91,7 @@ function createDiscovery(ctx) {
     // page — the same gate the sitemap uses. The summary is the reviewed context, clipped; the
     // source's own full text is never reproduced (llms.txt states the rule).
     define(router, 'get', '/llms-full.txt', 'llmsFullTxt', async (_req, res) => {
-        const active = await instruments.active();
+        const active = await instruments.indexCandidates();
         const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
         const pages = await Promise.all(active.filter((_i, n) => decisions[n].indexable).map(async (i) => {
             const rev = await context.published(i);
@@ -113,7 +113,7 @@ function createDiscovery(ctx) {
     const pageLastmod = (instrument, changes) => Math.max(instrument.updated_at || 0, instrument.context_published_at || 0, changes.get(instrument.id) || 0);
 
     define(router, 'get', '/sitemap.xml', 'sitemapIndex', async (_req, res) => {
-        const active = await instruments.active();
+        const active = await instruments.indexCandidates();
         const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
         const changes = await pageChanges();
         const times = active.filter((i, n) => decisions[n].indexable).map((i) => pageLastmod(i, changes)).filter(Boolean);
@@ -123,7 +123,8 @@ function createDiscovery(ctx) {
 
     define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {
         const changes = await pageChanges();
-        const entries = (await Promise.all((await instruments.active()).map(async (i) => ({
+        // Without a published context an instrument page is noindex (indexing.js), so only the candidates are weighed.
+        const entries = (await Promise.all((await instruments.indexCandidates()).map(async (i) => ({
             loc: urls.instrument(i),
             ...(pageLastmod(i, changes) ? { lastmod: new Date(pageLastmod(i, changes)).toISOString() } : {}),
             decision: await indexing.decide(i),

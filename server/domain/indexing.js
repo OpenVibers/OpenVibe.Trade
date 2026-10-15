@@ -101,7 +101,9 @@ function createIndexing({ store, config, ctx, indexnow }) {
         OWNER,
         decide,
         refresh,
-        refreshAll: async () => await store.tx(async () => (await Promise.all((await ctx.instruments.active()).map(async (i) => await refresh(i)))).filter(Boolean)),
+        // Every minute (the freshness tick): only the instruments that can have a Search document (instruments.js
+        // indexCandidates), not the whole SEC list.
+        refreshAll: async () => await store.tx(async () => (await Promise.all((await ctx.instruments.indexCandidates()).map(async (i) => await refresh(i)))).filter(Boolean)),
     };
 }
 

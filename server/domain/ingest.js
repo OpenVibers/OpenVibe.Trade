@@ -14,11 +14,16 @@
  *        removed item            → the document is hidden (the row stays)
  *        observation item        → an observation (domain/observations.js; idempotent per item revision)
  *        filing / keyed item     → a document (domain/documents.js; new → document alerts)
+ *        instrument item         → a listed company (registerInstrument below)
  *        no instrument matches   → skipped (counted by reason; nothing is created for it)
  *
- * The one instrument the sync ever creates is a currency a rate states (frankfurter/ECB name the
- * quote, e.g. USD): an ISO code needs no editorial naming, and a rate with no instrument to hang on
- * would otherwise never appear. Every other item still requires an editor-created instrument.
+ * The sync creates two kinds of instrument, both named by their source rather than by an editor:
+ *   - a currency a rate states (frankfurter/ECB name the quote, e.g. USD), named by its ISO 4217 code;
+ *   - a listed company from SEC's own ticker list (sec-company-tickers): one instrument per CIK, its
+ *     first ticker the symbol and any other share class (GOOG beside GOOGL) a ticker alias, so the
+ *     SEC filings feed (which names the CIK) finds it. SEC's name and exchange are kept current on
+ *     the instruments the sync created; an editor's instrument is never renamed, only given its CIK
+ *     when it had none.
  *
  * A failed call is recorded in trade_sync_state (last_error) and changes nothing else; freshness
  * then decays on Trade's own clock, so pages show the data as stale instead of pretending.
@@ -94,11 +99,48 @@ function createIngest({ store, config, ctx, sources, log = console }) {
         }
     }
 
+    const SYNC = 'svc:trade';
+
+    /** A listed company from SEC's ticker list → its instrument (created, given a ticker, or kept current). */
+    async function registerInstrument(m) {
+        const want = m.instrument;
+        const taken = (err) => { if (err && err.status === 409) return 'skipped_alias_taken'; throw err; };
+        const byCik = await ctx.instruments.resolve(want.cik, { kind: 'cik' });
+        if (byCik.status === 'resolved') {
+            const have = byCik.instrument;
+            const tickers = (await ctx.instruments.aliases(have)).filter((a) => a.kind === 'ticker').map((a) => a.normalized);
+            let out = 'instruments_unchanged';
+            if (have.symbol !== want.symbol && !tickers.includes(want.symbol)) {
+                try { await ctx.instruments.addAlias(have, 'ticker', want.symbol, SYNC); out = 'instruments_ticker_added'; } catch (err) { return taken(err); }
+            }
+            if (have.created_by === SYNC && (have.name !== want.name || (have.exchange || null) !== want.exchange) && have.symbol === want.symbol) {
+                await ctx.instruments.update(have, { name: want.name, exchange: want.exchange });
+                out = 'instruments_updated';
+            }
+            return out;
+        }
+        const bySymbol = await ctx.instruments.resolve(want.symbol, { kind: 'ticker' });
+        if (bySymbol.status === 'resolved') {
+            const have = bySymbol.instrument;
+            // An editor's equity without a CIK is this company: give it the CIK so its filings arrive. Anything else
+            // holding the ticker (a currency code, another company) keeps it.
+            if (have.kind === 'equity' && !have.cik) {
+                try { await ctx.instruments.update(have, { cik: want.cik }); return 'instruments_updated'; } catch (err) { return taken(err); }
+            }
+            return 'skipped_symbol_taken';
+        }
+        try {
+            await ctx.instruments.create(want, SYNC);
+            return 'instruments_created';
+        } catch (err) { return taken(err); }
+    }
+
     /** Apply one item. → a counter name. Inside the page transaction. */
     async function applyItem(item) {
         if (item.removed) return await ctx.documents.remove(item.id, { at: parseTime(item.removed.at), reason: item.removed.reason }) ? 'documents_removed' : 'removed_unknown';
         const m = mapItem(item);
         if (m.type === 'skip') return `skipped_${m.reason}`;
+        if (m.type === 'instrument') return await registerInstrument(m);
         const instrument = await instrumentFor(m);
         if (!instrument) return 'skipped_no_matching_instrument';
         if (instrument.status !== 'active') return 'skipped_archived_instrument';

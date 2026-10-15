@@ -21,6 +21,9 @@
  *                 else fields.form_type; the filer is the item title.
  *                 Any other item with fields.cik or fields.symbol/ticker is a document too
  *                 (kind 'record' for record items, else 'article').
+ *   instrument    a listed company from SEC's own ticker list (sec-company-tickers, kind 'instrument'): fields
+ *                 { ticker, name, cik, exchange } exactly as SEC lists them. All three of ticker, name and CIK
+ *                 are required; the exchange may be null.
  *   skip          everything else, with a reason (counted in the sync state, never guessed at).
  */
 const { parseTime, parseDecimal, iso } = require('./helpers');
@@ -91,7 +94,7 @@ function statedObservation(item, f) {
     return null;
 }
 
-/** → { type: 'observation', keys, observation } | { type: 'document', keys, document } | { type: 'skip', reason } */
+/** → { type: 'observation' | 'document' | 'instrument', keys, observation | document | instrument } | { type: 'skip', reason } */
 function mapItem(item) {
     if (!item || typeof item !== 'object' || !item.id) return { type: 'skip', reason: 'malformed_item' };
     const f = item.fields && typeof item.fields === 'object' ? item.fields : {};
@@ -102,6 +105,18 @@ function mapItem(item) {
     const prov = item.provenance || {};
     const retrievedAt = parseTime(prov.retrieved_at);
     if (retrievedAt == null) return { type: 'skip', reason: 'no_retrieval_time' };
+
+    if (item.kind === 'instrument') {
+        const symbol = tickerish(str1(f.ticker) || str1(item.identity));
+        const cik = f.cik != null && /^\d{1,10}$/.test(String(f.cik).trim()) ? String(f.cik).trim().padStart(10, '0') : null;
+        const name = str1(f.name) || str1(item.title);
+        if (!symbol || !cik || !name) return { type: 'skip', reason: 'incomplete_instrument' };
+        return {
+            type: 'instrument', keys: { cik, symbol },
+            // SEC lists companies on US exchanges (and OTC): they trade in US dollars.
+            instrument: { symbol, name: name.slice(0, 200), cik, exchange: str1(f.exchange) ? str1(f.exchange).slice(0, 40) : null, kind: 'equity', currency: 'USD' },
+        };
+    }
 
     const obs = statedObservation(item, f);
     if (obs) {

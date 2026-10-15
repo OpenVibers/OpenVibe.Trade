@@ -65,8 +65,21 @@ function createInstruments({ store }) {
         insertAlias: db.prepare(`INSERT INTO trade_instrument_aliases (instrument_id, kind, value, normalized, added_by, created_at)
                                  VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`),
         count: db.prepare("SELECT COUNT(*) AS n FROM trade_instruments WHERE status = 'active'"),
-        page: db.prepare("SELECT * FROM trade_instruments WHERE status = 'active' ORDER BY symbol LIMIT ? OFFSET ?"),
+        // The home's list: the instruments with the newest document or observation first, then the rest by symbol (about
+        // 10,000 companies from SEC's list, most of them quiet on any given day).
+        page: db.prepare(`SELECT i.* FROM trade_instruments i
+            LEFT JOIN (SELECT instrument_id, MAX(t) AS t FROM (
+                SELECT instrument_id, retrieved_at AS t FROM trade_source_documents WHERE removed_at IS NULL
+                UNION ALL SELECT instrument_id, observed_at AS t FROM trade_market_observations) x GROUP BY instrument_id) a ON a.instrument_id = i.id
+            WHERE i.status = 'active' ORDER BY a.t DESC NULLS LAST, i.symbol LIMIT ? OFFSET ?`),
         active: db.prepare("SELECT * FROM trade_instruments WHERE status = 'active' ORDER BY symbol"),
+        // Only these can have a Search document or change one: a published context (the gate needs it) or a document
+        // Search already holds (it may need a tombstone). Every other instrument is noindex and stays out of Search.
+        indexCandidates: db.prepare(`SELECT i.* FROM trade_instruments i WHERE i.status = 'active' AND (i.context_published_revision IS NOT NULL
+            OR EXISTS (SELECT 1 FROM trade_index_revisions r WHERE r.owner = 'trade' AND r.type = 'instrument' AND r.id = i.id)) ORDER BY i.symbol`),
+        withPending: db.prepare(`SELECT i.* FROM trade_instruments i WHERE i.status = 'active' AND EXISTS (SELECT 1 FROM trade_context_revisions r
+            WHERE r.entity_id = i.id AND r.number > COALESCE(i.context_published_revision, 0)) ORDER BY i.symbol`),
+        editorAdded: db.prepare("SELECT * FROM trade_instruments WHERE status = 'active' AND created_by LIKE 'usr\\_%' ORDER BY symbol"),
     };
 
     function fields(input, { partial = false } = {}) {
@@ -114,6 +127,9 @@ function createInstruments({ store }) {
         bySymbol: async (symbol) => { const s = normSymbol(symbol); return s ? await q.bySymbol.get(s) || null : null; },
         aliases: async (instrument) => await q.aliasesOf.all(instrument.id),
         active: async () => await q.active.all(),
+        indexCandidates: async () => await q.indexCandidates.all(),
+        withPending: async () => await q.withPending.all(),
+        editorAdded: async () => await q.editorAdded.all(),
         async page({ limit = 50, offset = 0 } = {}) {
             return { total: (await q.count.get()).n, instruments: await q.page.all(limit, offset) };
         },
