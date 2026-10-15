@@ -83,6 +83,8 @@ const HOUR = 3600e3;
         assert.ok(json.observations.find((o) => o.metric === 'price.close').value === '10.60', 'last real value kept, labelled stale');
         const sourcesPage = await t.get('/sources');
         assert.ok(/failing since/.test(sourcesPage.text), 'the sources page says the sync is failing');
+        // On a phone the table scrolls sideways (trade.css), so it is a keyboard stop (axe scrollable-region-focusable).
+        assert.ok(!/<table(?![^>]*tabindex)[^>]*class="data/.test(sourcesPage.text), 'every data table is focusable');
         const ready = (await t.get('/api/ready')).json();
         assert.ok(JSON.stringify(ready).includes('last Sources sync failed'));
         t.sources.setDown(false);
