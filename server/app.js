@@ -135,12 +135,13 @@ async function createApp(opts = {}) {
             directives: {
                 defaultSrc: ["'self'"],
                 // The OpenVibe Frame (theme-loader, navbar, footer) comes from the Network; the inline init is ours.
-                scriptSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network'],
+                // Cloudflare Web Analytics: the edge injects its beacon into every page (as on Wiki and Live).
+                scriptSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network', 'https://static.cloudflareinsights.com'],
                 styleSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network', 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
                 fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
                 imgSrc: ["'self'", 'data:', 'https:'],
                 // openvibe.events: release notifications (release-watch's EventSource, openvibe-shared 1.17).
-                connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.events'],
+                connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.events', 'https://cloudflareinsights.com'],
                 frameSrc: ["'self'", 'https://openvibe.network'],
                 frameAncestors: ["'self'"],
                 objectSrc: ["'none'"],
