@@ -52,6 +52,12 @@ Other tables in the same database:
 - `trade_ingest_cursor`: the change cursor of the Sources feed (`openvibe-publishing/ingest`).
 - `trade_sync_state`: the last sync error and counters of what was skipped and why.
 - `event_outbox` (SDK outbox) and `idempotency_receipts` (SDK inbox for signed webhook deliveries).
+- `telemetry_samples` (migration `0005_telemetry.sql`): request telemetry, openvibe-sdk 0.46
+  `platform.telemetry-sample@1` shape. Each request is aggregated by route template, method and
+  status class, never by raw URL; `/shared`, static assets, health, readiness and `/metrics` are not
+  counted. `server/app.js` builds the collector (`createHttpTelemetry`) and mounts its middleware;
+  every minute and on stop `server/index.js` writes one `http.request` sample per key plus the
+  active-requests, p95 latency and event-loop-lag gauges, and deletes rows older than 14 days daily.
 
 ## Does not own
 
