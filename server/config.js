@@ -96,6 +96,29 @@ function load(env = process.env) {
             freshnessIntervalMs: int(env.TRADE_FRESHNESS_INTERVAL_MS, 60_000),
         },
 
+        // SEC EDGAR's XBRL company facts (domain/facts.js, clients/sec.js): read for a company when it files a report
+        // (the briefs tick, at most perTick a tick) or when a reader asks for a brief. SEC's fair access wants a
+        // User-Agent with a contact and at most 10 requests a second; requests here are spaced minIntervalMs apart.
+        sec: {
+            enabled: env.TRADE_SEC_FACTS !== 'off',
+            userAgent: String(env.TRADE_SEC_USER_AGENT || 'OpenVibe.Trade/1 (+https://openvibe.trade; Contact@OpenVibe.Network)'),
+            minIntervalMs: Math.max(int(env.TRADE_SEC_MIN_INTERVAL_MS, 1000), 150),
+            perTick: Math.max(int(env.TRADE_SEC_PER_TICK, 10), 0),
+        },
+
+        // OpenVibe.AI (clients/ai.js): trade.summarize_market_context writes the AI briefs. Off without the URL.
+        ai: {
+            internalUrl: trim(env.OV_AI_INTERNAL_URL || ''),
+            waitMs: int(env.TRADE_AI_WAIT_MS, 60_000),
+        },
+        // AI briefs (domain/briefs.js): the worker writes at most perTick each intervalMs, and the whole site (the
+        // worker and readers together) at most perHour.
+        briefs: {
+            intervalMs: Math.max(int(env.TRADE_BRIEFS_INTERVAL_MS, 10 * 60_000), 10_000),
+            perTick: Math.max(int(env.TRADE_BRIEFS_PER_TICK, 6), 0),
+            perHour: Math.max(int(env.TRADE_BRIEFS_PER_HOUR, 40), 0),
+        },
+
         // Browser origins that may call /api/v1 with a Bearer Network JWT (no cookies cross origins).
         apiCorsOrigins: list(env.API_CORS_ORIGINS || 'https://openvibe.network'),
 

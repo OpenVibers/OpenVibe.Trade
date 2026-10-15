@@ -9,7 +9,8 @@
  *   t.instrument({ symbol, name, cik })     // create an instrument through the domain (seed for tests)
  *   t.events(type)                          // parsed envelopes in event_outbox
  *
- * opts: env (overrides), clock, log (Trade's logger; default quiet), limitsNow (the per-actor limiter's
+ * opts: env (overrides), clock, log (Trade's logger; default quiet), sec and ai (stand-ins for clients/sec.js and
+ * clients/ai.js), limitsNow (the per-actor limiter's
  * clock; default the wall clock).
  */
 const http = require('http');
@@ -49,7 +50,7 @@ async function boot(opts = {}) {
     let built = null;
     async function start() {
         const config = configLib.load(env);
-        built = await createApp({ config, telemetrySink: opts.telemetrySink, store: createStore(testdb.db, { now: clock.now }), now: clock.now, log: opts.log || quiet, limitsNow: opts.limitsNow, indexnow: opts.indexnow, accountSend: opts.accountSend });
+        built = await createApp({ config, telemetrySink: opts.telemetrySink, store: createStore(testdb.db, { now: clock.now }), now: clock.now, log: opts.log || quiet, limitsNow: opts.limitsNow, indexnow: opts.indexnow, accountSend: opts.accountSend, sec: opts.sec, ai: opts.ai });
         await built.ctx.jwks.keys();
         server = await new Promise((resolve) => { const s = http.createServer(built.app); s.listen(0, '127.0.0.1', () => resolve(s)); });
         t.base = `http://127.0.0.1:${server.address().port}`;

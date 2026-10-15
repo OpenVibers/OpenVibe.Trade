@@ -18,6 +18,8 @@ const showcase = require('openvibe-shared/showcase');
 const frame = require('openvibe-shared/frame');
 const seo = require('openvibe-publishing/seo');
 const cache = require('openvibe-shared/cache-policy');
+const rateLimit = require('express-rate-limit');
+const { ApiError } = require('./errors');
 const { paginate } = require('openvibe-publishing/ssr');
 const views = require('../render/views');
 const { SITE_SUMMARY } = require('../render/layout');
@@ -57,7 +59,7 @@ function createPages(ctx) {
             styles: pageNo === 1 ? [showcase.STYLESHEET] : [],
             feeds: [{ type: 'rss', href: '/feed.xml', title: 'Recent documents (RSS)' }, { type: 'atom', href: '/atom.xml', title: 'Recent documents (Atom)' }, { type: 'json', href: '/feed.json', title: 'Recent documents (JSON Feed)' }],
             jsonLd: [seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en' })],
-            body: views.home({ page, recent, urls, sync: await sync.state(), pager, latest }),
+            body: views.home({ page, recent, urls, sync: await sync.state(), pager, latest, briefs: pageNo === 1 ? await ctx.briefs.recent(6) : [] }),
         });
     });
 
@@ -120,9 +122,31 @@ function createPages(ctx) {
             body: views.instrumentPage({
                 ...data, instrument, urls, pager, notice: common.noticeOf(req),
                 context: data.context, pending: viewer.editor ? await context.pending(instrument) : [],
+                brief: await ctx.briefs.latest(instrument),
+                briefs: { canAsk: ctx.briefs.enabled && Boolean(instrument.cik || data.observations.length || total) },
                 viewer, watchlists: signedIn ? await watchlists.forOwner(viewer.subject) : [], csrf: common.csrf(req), loginHref: common.loginHref(req),
             }),
         });
+    });
+
+    // A reader asks for the AI brief (domain/briefs.js): a form post from Trade's own page only, five per address in ten
+    // minutes, within the site's hourly budget. SEC's numbers are read first when this company's never were.
+    const briefLimit = rateLimit({ windowMs: 10 * 60_000, max: 5, standardHeaders: true, legacyHeaders: false });
+    define(router, 'post', '/i/:symbol/brief', 'writeBrief', briefLimit, async (req, res) => {
+        const instrument = await instruments.bySymbol(req.params.symbol);
+        if (!instrument) return common.notFound(req, res);
+        const own = new URL(config.baseUrl).origin;
+        const origin = req.get('origin');
+        const fromHere = origin ? origin === own : String(req.get('referer') || '').startsWith(`${own}/`);
+        try {
+            if (!fromHere) throw new ApiError(403, 'brief.cross_site', 'Ask for a brief from the company\'s page on openvibe.trade');
+            if (instrument.cik && ctx.sec.enabled && !(await ctx.facts.state(instrument))) await ctx.facts.record(instrument);
+            const r = await ctx.briefs.make(instrument, { trigger: 'reader' });
+            res.set('Cache-Control', cache.htmlHeaders({ private: true }));
+            return res.redirect(303, `${urls.path.instrument(instrument)}?n=${r.created ? 'brief_made' : 'brief_current'}#ai-brief`);
+        } catch (err) {
+            return common.failure(req, res, err);
+        }
     });
 
     return router;

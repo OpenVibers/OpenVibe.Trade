@@ -33,7 +33,8 @@ const OWNER = 'trade';
 
 function createIndexing({ store, config, ctx, indexnow }) {
     const { db } = store;
-    const latestMonetary = db.prepare(`SELECT observed_at FROM trade_market_observations WHERE instrument_id = ? AND currency IS NOT NULL
+    // A price or rate (no period): a filed figure for a quarter or a year is history, not a price that can go stale.
+    const latestMonetary = db.prepare(`SELECT observed_at FROM trade_market_observations WHERE instrument_id = ? AND currency IS NOT NULL AND period IS NULL
                                        ORDER BY observed_at DESC LIMIT 1`);
 
     async function publishedContext(instrument) {

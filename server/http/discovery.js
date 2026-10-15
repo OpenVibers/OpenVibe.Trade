@@ -71,7 +71,7 @@ function createDiscovery(ctx) {
         res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(sharedSeo.llmsTxt({
             name: SITE_NAME,
             summary: SITE_SUMMARY,
-            details: 'Every number on an instrument page is an observation with observed_at, retrieved_at and its source; an instrument without observations shows no number. Stale sources are labelled "stale since <time>" and never replaced. Each instrument page has a JSON twin at /i/<SYMBOL>.json with the same data. AI-written context is labelled and is not published before a person reviews it. There is no custody, order execution, escrow, marketplace or personal advice.',
+            details: 'Every number on an instrument page is an observation with observed_at, retrieved_at and its source; an instrument without observations shows no number. Stale sources are labelled "stale since <time>" and never replaced. Each instrument page has a JSON twin at /i/<SYMBOL>.json with the same data. AI briefs (OpenVibe.AI) are written only from the SEC numbers and filings on the page, cite each one, are labelled as AI-written and not reviewed by a person, and never give advice; editor context drafted by AI is not published before a person reviews it. There is no custody, order execution, escrow, marketplace or personal advice.',
             sections: [
                 { title: 'Start here', links: [
                     { title: 'Instruments', url: abs('/'), note: 'all instruments' },
