@@ -22,7 +22,7 @@ const NETWORK_URL = 'https://openvibe.network';
 const SITE_NAME = 'OpenVibe.Trade';
 const DISCLAIMER = 'Information only — not investment advice; no trading here.';
 // The site's one-line AI summary: /llms.txt, /llms-full.txt and the home page's ai-summary all use it.
-const SITE_SUMMARY = 'Informational market context: instruments, timestamped observations with their sources, filings from OpenVibe.Sources, and reviewed context. Information only — not investment advice; no trading here.';
+const SITE_SUMMARY = 'Informational market context for about 8,000 US-listed companies: SEC filings as they arrive, the key numbers in them with their periods and sources, and AI briefs that cite every figure they use. Information only — not investment advice; no trading here.';
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
 
 const hashes = new Map();

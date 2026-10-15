@@ -34,6 +34,8 @@ const NOTICES = {
     context_published: 'Context published.',
     context_rejected: 'Review recorded: rejected.',
     context_retracted: 'Published context retracted.',
+    brief_made: 'AI brief written.',
+    brief_current: 'The AI brief already covers the latest figures and filings.',
 };
 
 function createCommon({ config, store }) {

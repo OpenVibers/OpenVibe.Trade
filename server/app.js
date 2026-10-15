@@ -99,6 +99,11 @@ async function createApp(opts = {}) {
     ctx.reading = createReading({ store, ctx });
     ctx.sources = opts.sourcesClient || createSourcesClient({ config, fetchImpl, timeoutMs: 15_000 });
     ctx.sync = createIngest({ store, config, ctx, sources: ctx.sources, log });
+    // SEC's filed numbers and the AI briefs written from them (domain/facts.js, domain/briefs.js).
+    ctx.sec = opts.sec || require('./clients/sec').createSec({ config, fetchImpl });
+    ctx.facts = require('./domain/facts').createFacts({ store, ctx, sec: ctx.sec, log });
+    ctx.ai = opts.ai || require('./clients/ai').createAi({ config, fetchImpl });
+    ctx.briefs = require('./domain/briefs').createBriefs({ store, config, ctx, ai: ctx.ai, log });
     // Sign-in with OpenVibe.Network (openvibe-sdk/sso): routes, offline session verification through the
     // shared JWKS client, state + PKCE. ctx.jwks is the same client viewer.js verifies service tokens with.
     ctx.jwksUrl = `${String(config.networkInternalUrl || config.networkUrl).replace(/\/+$/, '')}/api/.well-known/jwks`;
@@ -113,7 +118,7 @@ async function createApp(opts = {}) {
     ctx.jwks.keys().catch(() => {});   // warm the key cache at boot (non-fatal if the Network is down)
     ctx.viewers = createViewerResolver({ auth: ctx.auth, config, jwksUrl: ctx.jwksUrl });
     ctx.common = createCommon({ config, store });
-    ctx.worker = createWorker({ config, sync: ctx.sync, freshness: ctx.freshness, indexing: ctx.indexing, outbox: ctx.outbox, log });
+    ctx.worker = createWorker({ config, sync: ctx.sync, freshness: ctx.freshness, indexing: ctx.indexing, outbox: ctx.outbox, facts: ctx.facts, briefs: ctx.briefs, sec: ctx.sec, log });
 
     const app = express();
     app.disable('x-powered-by');

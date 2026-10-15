@@ -1,5 +1,6 @@
 'use strict';
 
+const { labelOf } = require('../domain/facts');
 /**
  * Page bodies (HTML fragments for layout.renderPage). All escaping goes through
  * openvibe-publishing/ssr's `html` tagged template; `raw()` only wraps HTML built here or by the
@@ -47,24 +48,40 @@ function tradeShowcase() {
     return showcase.hero({
         eyebrow: 'OpenVibe.Trade',
         title: 'Market information that shows', accent: 'its source',
-        lede: 'Instruments, filings and market observations from named sources. Every value shows when it was observed, when it was retrieved and which source stated it; when a source falls behind, its data is marked stale and never replaced with a guess.',
-        actions: [{ label: 'Find an instrument', href: '#find', primary: true }, { label: 'Source freshness', href: '/sources' }],
+        lede: 'About 10,000 US-listed companies from the SEC\'s own list, their filings as they arrive, the key numbers in those filings, and short AI briefs that cite every figure they use. Every value shows when it was observed, when it was retrieved and which source stated it; when a source falls behind, its data is marked stale and never replaced with a guess.',
+        actions: [{ label: 'Find a company', href: '#find', primary: true }, { label: 'Latest AI briefs', href: '#briefs' }, { label: 'Source freshness', href: '/sources' }],
     }) + showcase.features({
         title: 'What is here',
         items: [
             { icon: 'ov:search', title: 'Find an instrument', text: 'By ticker, SEC CIK or company name. One match takes you straight there; several are listed, never guessed between.' },
-            { icon: 'ov:history', title: 'Values with their times', text: 'Each observation keeps the exact value as stated, its source, and when it was observed and retrieved. Stale data carries a badge.' },
-            { icon: 'ov:docs', title: 'Filings and documents', text: 'Documents gathered by OpenVibe.Sources with their publication and retrieval dates, and feeds in RSS, Atom and JSON.' },
-            { icon: 'ov:bell', title: 'Watchlists and alert rules', text: 'Private to you when signed in. Context on an instrument is written by an editor, or drafted by AI and reviewed by a person, and says which.' },
+            { icon: 'ov:history', title: 'The numbers from the filings', text: 'Revenue, net income, EPS, cash flow and the balance sheet, exactly as each company filed them with the SEC, each with its period and filing.' },
+            { icon: 'ov:ai', title: 'AI briefs that cite', text: 'OpenVibe.AI reads only the numbers and filings on the page and writes a short brief; every point links to the figure it rests on. Labelled, never advice.' },
+            { icon: 'ov:docs', title: 'Filings as they arrive', text: 'SEC filings gathered by OpenVibe.Sources with their publication and retrieval dates, and feeds in RSS, Atom and JSON.' },
+            { icon: 'ov:bell', title: 'Watchlists and alert rules', text: 'Private to you when signed in: an alert for a new filing or a number crossing a line.' },
         ],
     });
 }
 
-function home({ page, recent, urls, sync, pager, latest = new Map() }) {
+/** The newest AI briefs, one per company, for the home page. */
+function recentBriefs(briefs, urls) {
+    if (!briefs.length) return html`<p class="empty">No AI briefs yet. They are written when a company files a report, or when you ask for one on its page.</p>`;
+    return html`<ul class="briefs">${briefs.map((b) => html`<li><a href="${urls.path.instrument({ symbol: b.symbol })}#ai-brief"><strong>${b.symbol}</strong></a> ${b.name}
+  <p>${clip(b.summary, 220)}</p><span class="muted">AI brief, ${when(b.created_at)}${b.as_of ? html` · figures to ${when(b.as_of)}` : ''}</span></li>`)}</ul>
+<p class="muted">Written by OpenVibe.AI from SEC filings and the numbers in them, not reviewed by a person. Informational only; not investment advice.</p>`;
+}
+
+function clip(text, n) {
+    const s = String(text || '').replace(/\s+/g, ' ').trim();
+    if (s.length <= n) return s;
+    const cut = s.slice(0, n);
+    return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), n - 20))}…`;
+}
+
+function home({ page, recent, urls, sync, pager, latest = new Map(), briefs = [] }) {
     // The exchange column only when an instrument on the page has one (a currency has none to record).
     const exchanges = page.instruments.some((i) => i.exchange);
     const latestCell = (o) => (o
-        ? html`<td class="num"><data value="${o.value}">${o.value}</data> ${o.unit} <span class="muted">${o.metric}, ${when(o.observed_at)}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
+        ? html`<td class="num"><data value="${o.value}">${o.value}</data> ${o.unit} <span class="muted">${labelOf(o.metric)}${o.period ? `, ${o.period}` : `, ${when(o.observed_at)}`}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
         : html`<td><span class="muted">no observation yet</span></td>`);
     const rows = page.instruments.map((i) => html`<tr>
         <td><a href="${urls.path.instrument(i)}"><strong>${i.symbol}</strong></a></td>
@@ -82,7 +99,10 @@ ${first ? raw(tradeShowcase()) : html`<h1>Sourced market information</h1>`}
   <input id="q" name="q" type="search" maxlength="200" required>
   <button type="submit">Find</button>
 </form>
+${first ? html`<h2 id="briefs">Latest AI briefs</h2>
+${recentBriefs(briefs, urls)}` : ''}
 <h2>Instruments</h2>
+<p class="muted">Newest filing or figure first.</p>
 ${page.instruments.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Kind</th>${exchanges ? html`<th scope="col">Exchange</th>` : ''}<th scope="col">Latest</th></tr></thead><tbody>${rows}</tbody></table>
 ${raw(paginationHtml(pager))}`
         : html`<p class="empty">No instruments have been added yet.</p>`}
@@ -113,7 +133,7 @@ function observationsTable(instrument, observations) {
         return html`<p class="empty" id="no-observations">No observations have been recorded for ${instrument.symbol}, so no number is shown.</p>`;
     }
     const rows = observations.map((o) => html`<tr id="${o.id}" class="${o.freshness.stale ? 'is-stale' : ''}">
-        <th scope="row">${o.metric}${o.period ? html` <span class="muted">(${o.period})</span>` : ''}</th>
+        <th scope="row">${labelOf(o.metric)}${o.period ? html` <span class="muted">(${o.period})</span>` : ''}</th>
         <td class="num"><data value="${o.value}">${o.value}</data> ${o.unit}${o.currency && o.currency !== o.unit ? html` <span class="muted">${o.currency}</span>` : ''}</td>
         <td>${when(o.observed_at)}</td>
         <td>${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.key}</a>` : o.source.key}</td>
@@ -215,6 +235,24 @@ ${watchlists.length ? html`<form method="post" action="/watchlists/item" class="
 </form></section>`;
 }
 
+/** The AI brief: labelled, its points linked to the rows they cite, and how to get one when there is none. */
+function briefSection(instrument, d) {
+    const b = d.brief;
+    const anchor = (c) => `#${c.id}`;
+    const ask = d.briefs && d.briefs.canAsk ? html`<form method="post" action="/i/${encodeURIComponent(instrument.symbol)}/brief" class="inline-form">
+  <button type="submit">${b ? 'Check for a newer brief' : 'Write an AI brief'}</button></form>` : '';
+    if (!b) {
+        return html`<section aria-labelledby="ai-brief-h" id="ai-brief"><h2 id="ai-brief-h">AI brief</h2>
+<p class="empty">No AI brief for ${instrument.symbol} yet.${d.briefs && d.briefs.canAsk ? ' One can be written from the SEC numbers and filings Trade has for it.' : ''}</p>${ask}</section>`;
+    }
+    return html`<section aria-labelledby="ai-brief-h" id="ai-brief" class="ai-brief"><h2 id="ai-brief-h">AI brief <span class="badge">AI-written, not reviewed by a person</span></h2>
+${b.summary ? html`<p>${b.summary}</p>` : ''}
+${b.points.length ? html`<ul>${b.points.map((p) => html`<li>${p.text} ${p.cites.map((c, n) => html`<a class="cite" href="${anchor(c)}" title="${c.kind === 'document' ? 'The filing this rests on' : 'The figure this rests on'}">[${n + 1}]</a>`)}</li>`)}</ul>` : ''}
+<p class="muted">${b.disclaimer} Written ${when(b.created_at)}${b.as_of ? html` from figures and filings up to ${when(b.as_of)}` : ''}${b.model ? html` (${b.model})` : ''}.</p>
+${b.gaps.length ? html`<details><summary>What the sources did not support</summary><ul>${b.gaps.map((g) => html`<li>${g}</li>`)}</ul></details>` : ''}
+${ask}</section>`;
+}
+
 function instrumentPage(d) {
     const { instrument, aliases, observations, sources, documents, context, urls } = d;
     const crumbs = breadcrumbsHtml([{ name: 'Instruments', url: '/' }, { name: instrument.symbol }]);
@@ -224,6 +262,7 @@ function instrumentPage(d) {
 <h1>${instrument.symbol} <span class="name">${instrument.name}</span></h1>
 <p class="meta">${meta}${other.length ? html` · also ${other.map((a) => a.value).join(', ')}` : ''}${instrument.status !== 'active' ? html` · <span class="badge stale">archived</span>` : ''}</p>
 ${notice(d.notice)}
+${briefSection(instrument, d)}
 <section aria-labelledby="obs-h"><h2 id="obs-h">Observations</h2>${observationsTable(instrument, observations)}</section>
 ${contextSection(instrument, context, urls, { pending: d.pending, editor: d.viewer && d.viewer.editor })}
 ${documentsSection(instrument, documents, { pager: d.pager, urls })}

@@ -4,10 +4,10 @@
 
 **Status:** alpha (roadmap Wave 19). The service runs, its tests pass, and it is **public at its
 domain, [openvibe.trade](https://openvibe.trade), since 2026-10-09**, after an independent
-pre-launch security review whose fixes shipped first. `/api/ready` reports `degraded:
-["freshness"]` because there is no feed, and the database is empty (0 instruments) until editors add
-the first ones. Its capabilities and service manifest are registered in openvibe-contracts. No
-market data feed is configured yet (see "What it shows today").
+pre-launch security review whose fixes shipped first. Since 2026-10-15 it carries about 8,000
+US-listed companies from the SEC's own ticker list, their XBRL filings as they arrive, the key numbers
+in those filings, and AI briefs that cite them (see "What it shows today"). Its capabilities and
+service manifest are registered in openvibe-contracts. No price feed is configured.
 **Domain:** `openvibe.trade` · **Port:** 4860 · **Service id:** `trade`
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §12.11;
 roadmap Wave 19, §15.13, §29, §32. **Binding decision:** ADR-025 (marketplace and commerce scope).
@@ -20,7 +20,8 @@ roadmap Wave 19, §15.13, §29, §32. **Binding decision:** ADR-025 (marketplace
 An informational product: instruments and their aliases with deterministic resolution, market
 observations that always show when they were observed, when they were retrieved and which source
 stated them, filings and other source documents from OpenVibe.Sources, private watchlists, alert
-rules, and short context written by editors (or drafted by OpenVibe.AI and reviewed by a person).
+rules, short AI briefs written from SEC's filed numbers and filings (labelled, not reviewed by a person), and
+context written by editors (or drafted by OpenVibe.AI and reviewed by a person).
 
 Per ADR-025 Trade is informational **only**. There is no custody, no order execution, no escrow, no
 listing between users and no personalised financial advice — not as a feature, not as an endpoint,
@@ -120,10 +121,29 @@ Other tables in the same database:
 
 ### What it shows today
 
-Trade shows only what a source stated. OpenVibe.Sources' one trade source (`sec-xbrl-filings`) is
-**disabled** until a person verifies its terms, and it carries filings, not prices. So a fresh
-deployment has no instruments (editors add them), no documents until the source is enabled, and
-**no numbers at all** until a market data source that states values exists — which is correct.
+Trade shows only what a source stated:
+
+- **Companies:** SEC's ticker list (Sources `sec-company-tickers`, daily): one instrument per CIK, other share
+  classes as ticker aliases (`domain/ingest.js`).
+- **Filings:** SEC's XBRL filings feed (Sources `sec-xbrl-filings`, every 15 minutes), matched by CIK.
+- **Numbers:** SEC's XBRL company facts, read straight from `data.sec.gov` (`clients/sec.js`, `domain/facts.js`)
+  when a company files a 10-K, 10-Q, 20-F or 40-F, or when a reader asks for a brief:
+  - revenue, net income, operating income, diluted EPS and operating cash flow for the last five quarters and two
+    years;
+  - assets, liabilities, equity, cash, long-term debt and shares outstanding at the last five quarter ends.
+
+  Only SEC's framed facts are used (one per period), each an immutable observation with its period, its filing and
+  `source_key sec-companyfacts`.
+- **Rates:** euro reference rates from the ECB and Frankfurter.
+- **AI briefs** (`domain/briefs.js`, OpenVibe.AI `trade.summarize_market_context`):
+  - written from a company's numbers and filings list only, when a report brings new numbers (the worker,
+    `TRADE_BRIEFS_PER_TICK`) or when a reader asks (`POST /i/:symbol/brief`: same origin, 5 per address per 10
+    minutes), within `TRADE_BRIEFS_PER_HOUR` for the whole site;
+  - every kept point cites Trade's own observation or document rows, and an uncited point is dropped and listed;
+  - text that reads as advice is refused, and so is a placeholder run;
+  - shown labelled "AI-written, not reviewed by a person". They do not make a page indexable: that still needs a
+    person-reviewed context.
+- **No prices:** no price feed is configured.
 
 ### Routes (server-rendered, useful without JavaScript)
 
@@ -268,7 +288,11 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
 - **OpenVibe.Network notifications:** Network consumes `trade.alert.triggered` (its `network`
   subscription) and puts a "Trade alert: <symbol>" notification in the rule owner's inbox, linking the
   instrument page; deliveries are also listed at `/watchlists`.
-- **OpenVibe.AI:** optional, for drafts.
+- **OpenVibe.AI:** `ai.run.create` (namespace `trade`) for the AI briefs (`OV_AI_INTERNAL_URL`; off without it), and
+  optionally the drafts below.
+- **SEC EDGAR** (`data.sec.gov`, read directly, no key): XBRL company facts, public domain. Fair access: the
+  User-Agent `TRADE_SEC_USER_AGENT` names us and a contact; requests are spaced `TRADE_SEC_MIN_INTERVAL_MS` (1 s)
+  apart, at most `TRADE_SEC_PER_TICK` companies a tick. `TRADE_SEC_FACTS=off` turns it off.
 
 ### Grants the Network must hold
 
@@ -279,6 +303,7 @@ Each grant is `[client, capability, audience]`:
 - `[trade, network.account.export.contribute, openvibe.network]` and `[trade, network.account.deletion.confirm, openvibe.network]` (ADR-033; granted last, once this release is live)
 - `[trade, sources.item.read, openvibe.sources]`
 - `[trade, sources.source.read, openvibe.sources]`
+- `[trade, ai.run.create, openvibe.ai, ['trade.*']]` (the AI briefs)
 - For OpenVibe.AI to deliver drafts: `[ai, trade.context.read, openvibe.trade]` and
   `[ai, trade.context.propose, openvibe.trade]`
 - For a first-party market data feed, when one exists: `[<feed client>, trade.observation.write, openvibe.trade]`
