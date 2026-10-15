@@ -47,6 +47,13 @@ const QUARTER = /^CY\d{4}Q[1-4]$/;
 const YEAR = /^CY\d{4}$/;
 const INSTANT = /^CY\d{4}Q[1-4]I$/;
 
+/** Sort key for a metric: the statement order of METRICS (quarter, then year), then anything else by name. */
+function metricOrder(metric) {
+    const [base, span] = String(metric).split('.');
+    const i = Object.keys(METRICS).indexOf(base);
+    return i < 0 ? `9:${metric}` : `${String(i).padStart(2, '0')}:${span === 'q' ? 0 : span === 'fy' ? 1 : 2}`;
+}
+
 /** "Revenue (quarter)" for revenue.q; the label for anything else Trade records. */
 function labelOf(metric) {
     const [base, span] = String(metric).split('.');
@@ -171,4 +178,4 @@ function createFacts({ store, ctx, sec, log = console }) {
     };
 }
 
-module.exports = { createFacts, extract, labelOf, filingUrl, METRICS, SOURCE_KEY, SOURCE_NAME };
+module.exports = { createFacts, extract, labelOf, metricOrder, filingUrl, METRICS, SOURCE_KEY, SOURCE_NAME };
