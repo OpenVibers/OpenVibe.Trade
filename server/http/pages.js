@@ -24,7 +24,7 @@ const { SITE_SUMMARY } = require('../render/layout');
 const { define } = require('./routes');
 
 function createPages(ctx) {
-    const { config, instruments, documents, reading, freshness, urls, watchlists, context, common, sync } = ctx;
+    const { config, instruments, documents, reading, freshness, urls, watchlists, context, common, sync, observations } = ctx;
     const router = express.Router();
     const listing = (path) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: urls.abs(path), wordCount: 0 }, { policy: { minWords: 0 } });
 
@@ -40,6 +40,14 @@ function createPages(ctx) {
         const pager = paginate({ page: pageNo, perPage: per, total: first.total, href: (p) => (p === 1 ? '/' : `/?page=${p}`) });
         if (pager.outOfRange && first.total) return common.notFound(req, res);
         const page = await instruments.page({ limit: pager.limit, offset: pager.offset });
+        // Each listed instrument's headline number on the list itself: its latest price, close or rate (else its first
+        // metric), with when it was observed and whether its source is current. Fifty at most per page.
+        const now = Date.now();
+        const latest = new Map(await Promise.all(page.instruments.map(async (i) => {
+            const rows = await observations.latest(i);
+            const pick = ['price', 'close', 'rate'].map((m) => rows.find((o) => o.metric === m)).find(Boolean) || rows[0];
+            return [i.id, pick ? await observations.dto(pick, { now }) : null];
+        })));
         const recent = (await Promise.all((await documents.recent(10)).map(async (d) => ({ document: documents.dto(d), instrument: await instruments.get(d.instrument_id) }))));
         const canonical = urls.abs(pageNo === 1 ? '/' : `/?page=${pageNo}`);
         common.page(req, res, {
@@ -49,7 +57,7 @@ function createPages(ctx) {
             styles: pageNo === 1 ? [showcase.STYLESHEET] : [],
             feeds: [{ type: 'rss', href: '/feed.xml', title: 'Recent documents (RSS)' }, { type: 'atom', href: '/atom.xml', title: 'Recent documents (Atom)' }, { type: 'json', href: '/feed.json', title: 'Recent documents (JSON Feed)' }],
             jsonLd: [seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en' })],
-            body: views.home({ page, recent, urls, sync: await sync.state(), pager }),
+            body: views.home({ page, recent, urls, sync: await sync.state(), pager, latest }),
         });
     });
 

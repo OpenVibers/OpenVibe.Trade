@@ -151,6 +151,10 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
 
         const home = (await t.get('/')).text;
         assert.ok(home.includes('<meta name="ai-summary"'), 'the home carries the ai-summary meta');
+        // The list shows each instrument's latest number with its metric and time; the exchange column stays while one
+        // is recorded (ACME's NYSE), and an instrument with nothing observed says so.
+        assert.match(home, /<th scope="col">Exchange<\/th><th scope="col">Latest<\/th>/);
+        assert.match(home, /<td class="num"><data value="10\.50">10\.50<\/data> [^<]*<span class="muted">price\.close, /);
         assert.ok(home.includes('"@type":"WebPage"'), 'the home carries WebPage JSON-LD');
     });
 

@@ -60,10 +60,15 @@ function tradeShowcase() {
     });
 }
 
-function home({ page, recent, urls, sync, pager }) {
+function home({ page, recent, urls, sync, pager, latest = new Map() }) {
+    // The exchange column only when an instrument on the page has one (a currency has none to record).
+    const exchanges = page.instruments.some((i) => i.exchange);
+    const latestCell = (o) => (o
+        ? html`<td class="num"><data value="${o.value}">${o.value}</data> ${o.unit} <span class="muted">${o.metric}, ${when(o.observed_at)}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
+        : html`<td><span class="muted">no observation yet</span></td>`);
     const rows = page.instruments.map((i) => html`<tr>
         <td><a href="${urls.path.instrument(i)}"><strong>${i.symbol}</strong></a></td>
-        <td>${i.name}</td><td>${i.kind}</td><td>${i.exchange || html`<span class="muted">not recorded</span>`}</td>
+        <td>${i.name}</td><td>${i.kind}</td>${exchanges ? html`<td>${i.exchange || html`<span class="muted">not recorded</span>`}</td>` : ''}${latestCell(latest.get(i.id))}
     </tr>`);
     const docs = recent.map((r) => html`<li><a href="${urls.path.instrument(r.instrument)}#${r.document.id}">${r.instrument.symbol}</a>
         ${r.document.form_type ? html`<span class="badge">${r.document.form_type}</span>` : ''} ${r.document.title || r.document.filer_name || 'Untitled document'}
@@ -78,7 +83,7 @@ ${first ? raw(tradeShowcase()) : html`<h1>Sourced market information</h1>`}
   <button type="submit">Find</button>
 </form>
 <h2>Instruments</h2>
-${page.instruments.length ? html`<table class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Exchange</th></tr></thead><tbody>${rows}</tbody></table>
+${page.instruments.length ? html`<table class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Kind</th>${exchanges ? html`<th scope="col">Exchange</th>` : ''}<th scope="col">Latest</th></tr></thead><tbody>${rows}</tbody></table>
 ${raw(paginationHtml(pager))}`
         : html`<p class="empty">No instruments have been added yet.</p>`}
 <h2>Recent documents</h2>
