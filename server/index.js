@@ -23,11 +23,11 @@ const server = app.listen(config.port, config.host, () => {
 server.keepAliveTimeout = 65_000;
 ctx.outbox.start();
 ctx.worker.start();
-// telemetry_samples rows older than 30 days go: a minute after start, then daily (openvibe-sdk/telemetry).
-ctx.retention = startTelemetryRetention({ db: ctx.store.db, log: console });
+// telemetry_samples rows older than 14 days go: a minute after start, then daily (openvibe-sdk/telemetry).
+ctx.retention = startTelemetryRetention({ db: ctx.store.db, log: console, olderThanDays: 14 });
 // The request collector aggregates in memory and has no timer of its own (openvibe-sdk 0.46 createHttpTelemetry):
-// this tick writes each 15-second interval's samples; the stop clears it and flushes once more.
-ctx.telemetryTick = setInterval(() => { ctx.telemetry.flush().catch(() => {}); }, 15_000);
+// this tick writes each minute's samples; the stop clears it and flushes once more.
+ctx.telemetryTick = setInterval(() => { ctx.telemetry.flush().catch(() => {}); }, 60_000);
 ctx.telemetryTick.unref();
 // The two account subscriptions at OpenVibe.Events (ADR-033), created when missing; off without EVENTS_URL,
 // TRADE_EVENTS_WEBHOOK_SECRET or the client secret. The sources.* one stays scripts/subscribe.js's.
