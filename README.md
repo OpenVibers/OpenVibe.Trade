@@ -249,7 +249,7 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
 - **PostgreSQL 18 and Valkey 9** (OpenVibe.Host `roles/data/`, ADR-035): every read and write is async through
   `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional: without `VALKEY_URL` they count per process).
 - **Packages** (pinned by release tarball): `openvibe-contracts` v0.97.0, `openvibe-publishing`
-  v1.3.0 (revisions, authorship, seo, index-hooks, ssr, ingest, publication), `openvibe-shared` v4.1.3 (Frame, app icon,
+  v1.3.0 (revisions, authorship, seo, index-hooks, ssr, ingest, publication), `openvibe-shared` v4.1.5 (Frame, app icon,
   footer, legal, release, metrics, ready), `openvibe-sdk` v0.35.0 (events outbox and inbox, webhook
   signatures v2, service tokens, per-actor limits, service kit lifecycle).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
@@ -424,6 +424,6 @@ Part of the [OpenVibe network](https://openvibe.network). Built in the open by [
 <!-- versions:start -->
 - openvibe-contracts: v0.143.0
 - openvibe-sdk: v0.44.0
-- openvibe-shared: v4.1.3
+- openvibe-shared: v4.1.5
 - openvibe-publishing: v1.3.0
 <!-- versions:end -->
