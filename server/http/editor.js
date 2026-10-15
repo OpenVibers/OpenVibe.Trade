@@ -50,10 +50,10 @@ function createEditor(ctx) {
     }
 
     define(router, 'get', '/editor', 'showEditor', requireEditor, async (req, res) => {
-        const all = await instruments.active();
         const pending = [];
-        for (const i of all) for (const p of await context.pending(i)) pending.push({ symbol: i.symbol, revision: p.revision, label: p.needs_review ? 'AI draft, needs review' : 'not published' });
-        common.page(req, res, { title: 'Editor', decision, personal: true, body: views.editorHome({ instruments: all, pending, csrf: common.csrf(req), notice: common.noticeOf(req), kinds: instruments.KINDS }) });
+        for (const i of await instruments.withPending()) for (const p of await context.pending(i)) pending.push({ symbol: i.symbol, revision: p.revision, label: p.needs_review ? 'AI draft, needs review' : 'not published' });
+        const added = await instruments.editorAdded();
+        common.page(req, res, { title: 'Editor', decision, personal: true, body: views.editorHome({ instruments: added, pending, csrf: common.csrf(req), notice: common.noticeOf(req), kinds: instruments.KINDS }) });
     });
 
     define(router, 'post', '/editor/instruments', 'createInstrumentForm', ...form, B('trade.instrument.manage'), async (req, res) => {

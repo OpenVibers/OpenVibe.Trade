@@ -295,8 +295,9 @@ function editorHome({ instruments, pending, csrf, notice: n, kinds }) {
   <button type="submit">Add instrument</button></form>
 <h2>Context waiting for review</h2>
 ${pending.length ? html`<ul>${pending.map((p) => html`<li><a href="/editor/i/${encodeURIComponent(p.symbol)}">${p.symbol}</a>: revision ${p.revision} (${p.label})</li>`)}</ul>` : html`<p class="empty">Nothing is waiting.</p>`}
-<h2>Instruments</h2>
-<ul>${instruments.map((i) => html`<li><a href="/editor/i/${encodeURIComponent(i.symbol)}">${i.symbol}</a> — ${i.name}</li>`)}</ul>`;
+<h2>Instruments editors added</h2>
+${instruments.length ? html`<ul>${instruments.map((i) => html`<li><a href="/editor/i/${encodeURIComponent(i.symbol)}">${i.symbol}</a> — ${i.name}</li>`)}</ul>` : html`<p class="empty">None yet.</p>`}
+<p class="muted">Every other instrument (the companies on SEC's list, the currencies the rates name) opens at <code>/editor/i/SYMBOL</code>.</p>`;
 }
 
 async function editorInstrument({ instrument, aliases, revisions, documents, observations, csrf, notice: n, kinds, head }) {
