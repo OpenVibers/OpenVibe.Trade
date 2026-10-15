@@ -259,8 +259,9 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
   `http://127.0.0.1:4860/internal/events` (optional; the sync also runs on a timer).
 - **OpenVibe.Search:** consumes `trade.index_document.*` (Search's `*.index_document.*` subscription;
   `trade` must be in `SEARCH_EVENT_OWNERS`).
-- **OpenVibe.Network notifications:** a consumer of `trade.alert.triggered` (not built yet: until it
-  exists, deliveries are recorded and visible at `/watchlists`, and the events wait in Events).
+- **OpenVibe.Network notifications:** Network consumes `trade.alert.triggered` (its `network`
+  subscription) and puts a "Trade alert: <symbol>" notification in the rule owner's inbox, linking the
+  instrument page; deliveries are also listed at `/watchlists`.
 - **OpenVibe.AI:** optional, for drafts.
 
 ### Grants the Network must hold
