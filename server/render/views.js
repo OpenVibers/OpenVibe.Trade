@@ -83,7 +83,7 @@ ${first ? raw(tradeShowcase()) : html`<h1>Sourced market information</h1>`}
   <button type="submit">Find</button>
 </form>
 <h2>Instruments</h2>
-${page.instruments.length ? html`<table class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Kind</th>${exchanges ? html`<th scope="col">Exchange</th>` : ''}<th scope="col">Latest</th></tr></thead><tbody>${rows}</tbody></table>
+${page.instruments.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Kind</th>${exchanges ? html`<th scope="col">Exchange</th>` : ''}<th scope="col">Latest</th></tr></thead><tbody>${rows}</tbody></table>
 ${raw(paginationHtml(pager))}`
         : html`<p class="empty">No instruments have been added yet.</p>`}
 <h2>Recent documents</h2>
@@ -120,7 +120,7 @@ function observationsTable(instrument, observations) {
         <td>${when(o.retrieved_at)}</td>
         <td>${staleBadge(o.freshness)}</td>
     </tr>`);
-    return html`<table class="data observations">
+    return html`<table tabindex="0" class="data observations">
 <caption>Latest observation per metric. Values are exactly as the source stated them.</caption>
 <thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">Observed</th><th scope="col">Source</th><th scope="col">Retrieved</th><th scope="col">Freshness</th></tr></thead>
 <tbody>${rows}</tbody></table>`;
@@ -135,7 +135,7 @@ function sourcesTable(list, { caption }) {
         <td>${s.stale_after_sec ? `${Math.round(s.stale_after_sec / 60)} min` : ''}</td>
         <td>${s.upstream_status || html`<span class="muted">not reported</span>`}</td>
     </tr>`);
-    return html`<table class="data sources"><caption>${caption}</caption>
+    return html`<table tabindex="0" class="data sources"><caption>${caption}</caption>
 <thead><tr><th scope="col">Source</th><th scope="col">Freshness</th><th scope="col">Last successful fetch</th><th scope="col">Stale after</th><th scope="col">Sources reports</th></tr></thead>
 <tbody>${rows}</tbody></table>`;
 }
@@ -249,7 +249,7 @@ function watchlistsPage({ viewer, lists, rules, deliveries, csrf, loginHref, not
     }
     const listHtml = lists.map((w) => html`<section class="card" aria-label="${w.name}">
 <h2>${w.name}</h2>
-${w.items.length ? html`<table class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Note</th><th scope="col"></th></tr></thead><tbody>
+${w.items.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Note</th><th scope="col"></th></tr></thead><tbody>
 ${w.items.map((it) => html`<tr><td><a href="${new URL(it.instrument.url).pathname}">${it.instrument.symbol}</a></td><td>${it.instrument.name}</td><td>${it.note || ''}</td>
 <td><form method="post" action="/watchlists/item/remove" class="inline">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${w.id}"><input type="hidden" name="symbol" value="${it.instrument.symbol}"><button type="submit">Remove</button></form></td></tr>`)}
 </tbody></table>` : html`<p class="empty">Empty. Add instruments from their pages or below.</p>`}
@@ -274,7 +274,7 @@ ${listHtml}
   <label for="wl-name">New watchlist</label><input id="wl-name" name="name" maxlength="80" required>
   <button type="submit">Create</button></form>
 <h2>Your alerts</h2>
-${rules.length ? html`<table class="data"><thead><tr><th scope="col">Instrument</th><th scope="col">Condition</th><th scope="col">Created</th><th scope="col"></th></tr></thead><tbody>${ruleRows}</tbody></table>`
+${rules.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col">Instrument</th><th scope="col">Condition</th><th scope="col">Created</th><th scope="col"></th></tr></thead><tbody>${ruleRows}</tbody></table>`
         : html`<p class="empty">No alerts. Create one from an instrument’s page.</p>`}
 <h2>Recent alert deliveries</h2>
 ${deliveries.length ? html`<ul>${delRows}</ul>` : html`<p class="empty">None yet.</p>`}`;
