@@ -1,6 +1,12 @@
 'use strict';
 
-const { labelOf } = require('../domain/facts');
+const { labelOf, metricOrder } = require('../domain/facts');
+
+/** The stated decimal with thousands separators, digit for digit ("39544000000" → "39,544,000,000"). */
+function grouped(value) {
+    const m = /^(-?)(\d+)(\.\d+)?$/.exec(String(value));
+    return m ? `${m[1]}${m[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${m[3] || ''}` : String(value);
+}
 /**
  * Page bodies (HTML fragments for layout.renderPage). All escaping goes through
  * openvibe-publishing/ssr's `html` tagged template; `raw()` only wraps HTML built here or by the
@@ -81,7 +87,7 @@ function home({ page, recent, urls, sync, pager, latest = new Map(), briefs = []
     // The exchange column only when an instrument on the page has one (a currency has none to record).
     const exchanges = page.instruments.some((i) => i.exchange);
     const latestCell = (o) => (o
-        ? html`<td class="num"><data value="${o.value}">${o.value}</data> ${o.unit} <span class="muted">${labelOf(o.metric)}${o.period ? `, ${o.period}` : `, ${when(o.observed_at)}`}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
+        ? html`<td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit} <span class="muted">${labelOf(o.metric)}${o.period ? `, ${o.period}` : `, ${when(o.observed_at)}`}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
         : html`<td><span class="muted">no observation yet</span></td>`);
     const rows = page.instruments.map((i) => html`<tr>
         <td><a href="${urls.path.instrument(i)}"><strong>${i.symbol}</strong></a></td>
@@ -132,9 +138,10 @@ function observationsTable(instrument, observations) {
     if (!observations.length) {
         return html`<p class="empty" id="no-observations">No observations have been recorded for ${instrument.symbol}, so no number is shown.</p>`;
     }
-    const rows = observations.map((o) => html`<tr id="${o.id}" class="${o.freshness.stale ? 'is-stale' : ''}">
+    const ordered = observations.slice().sort((a, b) => (metricOrder(a.metric) < metricOrder(b.metric) ? -1 : metricOrder(a.metric) > metricOrder(b.metric) ? 1 : 0));
+    const rows = ordered.map((o) => html`<tr id="${o.id}" class="${o.freshness.stale ? 'is-stale' : ''}">
         <th scope="row">${labelOf(o.metric)}${o.period ? html` <span class="muted">(${o.period})</span>` : ''}</th>
-        <td class="num"><data value="${o.value}">${o.value}</data> ${o.unit}${o.currency && o.currency !== o.unit ? html` <span class="muted">${o.currency}</span>` : ''}</td>
+        <td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit}${o.currency && o.currency !== o.unit ? html` <span class="muted">${o.currency}</span>` : ''}</td>
         <td>${when(o.observed_at)}</td>
         <td>${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.key}</a>` : o.source.key}</td>
         <td>${when(o.retrieved_at)}</td>

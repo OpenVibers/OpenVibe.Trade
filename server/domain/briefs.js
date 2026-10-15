@@ -75,7 +75,8 @@ function createBriefs({ store, config, ctx, ai, log = console }) {
                 content: rows.map((r) => `${r.period || iso(r.observed_at)}: ${r.value} ${r.unit}${fromSec ? ` (filing ${String(r.source_ref).split(':')[1]})` : ` (${r.source_key})`}`).join('\n'),
                 provenance: { service: 'trade', source_key: o.source_key },
             });
-            refs.push(rows.map((r) => ({ kind: 'observation', id: r.id, at: r.observed_at })));
+            // Cited by its newest row: the one the page's observations table shows, so each citation links to a row on the page.
+            refs.push([{ kind: 'observation', id: o.id, at: o.observed_at }]);
         }
         for (const d of await q.docs.all(instrument.id, MAX_DOCS)) {
             if (sources.length >= MAX_SOURCES) break;
