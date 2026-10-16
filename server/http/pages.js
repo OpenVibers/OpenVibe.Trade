@@ -50,6 +50,11 @@ function createPages(ctx) {
             const pick = ['price', 'close', 'rate'].map((m) => rows.find((o) => o.metric === m)).find(Boolean) || rows[0];
             return [i.id, pick ? await observations.dto(pick, { now }) : null];
         })));
+        // Without a headline number, the newest filing stands in on the list.
+        const latestDocs = new Map((await Promise.all(page.instruments.filter((i) => !latest.get(i.id)).map(async (i) => {
+            const [d] = await documents.forInstrument(i, { limit: 1 });
+            return d ? [i.id, documents.dto(d)] : null;
+        }))).filter(Boolean));
         const recent = (await Promise.all((await documents.recent(10)).map(async (d) => ({ document: documents.dto(d), instrument: await instruments.get(d.instrument_id) }))));
         const canonical = urls.abs(pageNo === 1 ? '/' : `/?page=${pageNo}`);
         common.page(req, res, {
@@ -59,7 +64,7 @@ function createPages(ctx) {
             styles: pageNo === 1 ? [showcase.STYLESHEET] : [],
             feeds: [{ type: 'rss', href: '/feed.xml', title: 'Recent documents (RSS)' }, { type: 'atom', href: '/atom.xml', title: 'Recent documents (Atom)' }, { type: 'json', href: '/feed.json', title: 'Recent documents (JSON Feed)' }],
             jsonLd: [seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en' })],
-            body: views.home({ page, recent, urls, sync: await sync.state(), pager, latest, briefs: pageNo === 1 ? await ctx.briefs.recent(6) : [] }),
+            body: views.home({ page, recent, urls, sync: await sync.state(), pager, latest, latestDocs, briefs: pageNo === 1 ? await ctx.briefs.recent(6) : [] }),
         });
     });
 
