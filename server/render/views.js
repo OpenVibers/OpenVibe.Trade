@@ -83,15 +83,18 @@ function clip(text, n) {
     return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), n - 20))}…`;
 }
 
-function home({ page, recent, urls, sync, pager, latest = new Map(), briefs = [] }) {
+function home({ page, recent, urls, sync, pager, latest = new Map(), latestDocs = new Map(), briefs = [] }) {
     // The exchange column only when an instrument on the page has one (a currency has none to record).
     const exchanges = page.instruments.some((i) => i.exchange);
-    const latestCell = (o) => (o
+    // The headline number when there is one; else the newest filing (most companies on a given day only filed); else
+    // nothing to show yet beyond the SEC's company list.
+    const latestCell = (i, o, d) => (o
         ? html`<td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit} <span class="muted">${labelOf(o.metric)}${o.period ? `, ${o.period}` : `, ${when(o.observed_at)}`}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
-        : html`<td><span class="muted">no observation yet</span></td>`);
+        : d ? html`<td><a href="${urls.path.instrument(i)}#${d.id}">${d.form_type ? html`<span class="badge">${d.form_type}</span> ` : ''}filed ${when(d.published_at || d.first_seen_at)}</a></td>`
+            : html`<td><span class="muted">on the SEC's company list</span></td>`);
     const rows = page.instruments.map((i) => html`<tr>
         <td><a href="${urls.path.instrument(i)}"><strong>${i.symbol}</strong></a></td>
-        <td>${i.name}</td><td>${i.kind}</td>${exchanges ? html`<td>${i.exchange || html`<span class="muted">not recorded</span>`}</td>` : ''}${latestCell(latest.get(i.id))}
+        <td>${i.name}</td><td>${i.kind}</td>${exchanges ? html`<td>${i.exchange || html`<span class="muted">not recorded</span>`}</td>` : ''}${latestCell(i, latest.get(i.id), latestDocs.get(i.id))}
     </tr>`);
     const docs = recent.map((r) => html`<li><a href="${urls.path.instrument(r.instrument)}#${r.document.id}">${r.instrument.symbol}</a>
         ${r.document.form_type ? html`<span class="badge">${r.document.form_type}</span>` : ''} ${r.document.title || r.document.filer_name || 'Untitled document'}
@@ -249,8 +252,10 @@ function briefSection(instrument, d) {
     const ask = d.briefs && d.briefs.canAsk ? html`<form method="post" action="/i/${encodeURIComponent(instrument.symbol)}/brief" class="inline-form">
   <button type="submit">${b ? 'Check for a newer brief' : 'Write an AI brief'}</button></form>` : '';
     if (!b) {
+        // Briefs are written when a company files, or when a reader asks: with nothing to write from, there is no section.
+        if (!ask) return '';
         return html`<section aria-labelledby="ai-brief-h" id="ai-brief"><h2 id="ai-brief-h">AI brief</h2>
-<p class="empty">No AI brief for ${instrument.symbol} yet.${d.briefs && d.briefs.canAsk ? ' One can be written from the SEC numbers and filings Trade has for it.' : ''}</p>${ask}</section>`;
+<p>OpenVibe.AI can write a short brief on ${instrument.symbol} from the SEC numbers and filings on this page, every point linked to the figure it rests on. It takes a few seconds.</p>${ask}</section>`;
     }
     return html`<section aria-labelledby="ai-brief-h" id="ai-brief" class="ai-brief"><h2 id="ai-brief-h">AI brief <span class="badge">AI-written, not reviewed by a person</span></h2>
 ${b.summary ? html`<p>${b.summary}</p>` : ''}
