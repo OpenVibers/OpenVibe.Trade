@@ -89,7 +89,7 @@ function home({ page, recent, urls, sync, pager, latest = new Map(), latestDocs 
     // The headline number when there is one; else the newest filing (most companies on a given day only filed); else
     // nothing to show yet beyond the SEC's company list.
     const latestCell = (i, o, d) => (o
-        ? html`<td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit} <span class="muted">${labelOf(o.metric)}${o.period ? `, ${o.period}` : `, ${when(o.observed_at)}`}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
+        ? html`<td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit} <span class="muted">${labelOf(o.metric)}${o.period ? `, ${o.period}` : html`, ${when(o.observed_at)}`}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
         : d ? html`<td><a href="${urls.path.instrument(i)}#${d.id}">${d.form_type ? html`<span class="badge">${d.form_type}</span> ` : ''}filed ${when(d.published_at || d.first_seen_at)}</a></td>`
             : html`<td><span class="muted">on the SEC's company list</span></td>`);
     const rows = page.instruments.map((i) => html`<tr>
