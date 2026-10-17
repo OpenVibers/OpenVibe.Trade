@@ -61,6 +61,9 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (max-width: 700px) {
   h1 { font-size: 1.5rem; }
-  /* A table scrolls sideways here, so each has tabindex="0" (axe scrollable-region-focusable). */
+}
+/* A table scrolls sideways on phones and tablets, so each has tabindex="0" (axe scrollable-region-focusable). At 700 px
+   and up it overflowed the page at a tablet's 768 px (the home's latest-filings table was 879 px wide). */
+@media (max-width: 1024px) {
   table.data { display: block; overflow-x: auto; }
 }

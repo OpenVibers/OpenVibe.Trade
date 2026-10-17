@@ -18,8 +18,8 @@ const BUDGETS = {
     jsRawKB: 250,   // 246.2 with openvibe-shared 4.2.x (Ask Actor in the navbar, 2026-10-15); 239.1 (212.2 before openvibe-shared/shell's web-runtime.js)
     jsBrotliKB: 59,   // 56.3 (49.9 before web-runtime.js)
     cssFiles: 2,   // 2 (trade.css, openvibe-shared showcase.css)
-    cssRawKB: 18.5,   // 17.8 with the AI brief styles (2026-10-15); 16.2 before (4.7 before showcase.css)
-    cssBrotliKB: 4.4,   // 3.9 (1.3 before showcase.css)
+    cssRawKB: 18.5,   // 18.0 with tables scrolling sideways up to 1024 px (2026-10-17); 17.8 with the AI brief styles (2026-10-15); 16.2 before (4.7 before showcase.css)
+    cssBrotliKB: 4.7,   // 4.5 with the tablet table rule (2026-10-17); 3.9 (1.3 before showcase.css)
     externalFiles: 1,   // 0
 };
 
