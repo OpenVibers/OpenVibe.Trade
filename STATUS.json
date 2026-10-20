@@ -9,13 +9,13 @@
   "domain": "openvibe.trade",
   "scope": "informational only (ADR-025): no custody, no order execution, no escrow, no listings between users, no personalised advice",
   "contracts": "openvibe-contracts v0.200.0",
-  "sdk": "openvibe-sdk v0.51.1",
+  "sdk": "openvibe-sdk v0.60.0",
   "shared": "openvibe-shared v4.4.0",
   "packages": [
     "openvibe-contracts v0.200.0",
     "openvibe-publishing v1.3.0",
     "openvibe-shared v4.4.0",
-    "openvibe-sdk v0.51.1"
+    "openvibe-sdk v0.60.0"
   ],
   "capabilities": [
     "trade.instrument.resolve",
@@ -52,5 +52,5 @@
     "SDK outbox events and Search index documents",
     "per-actor limits (openvibe-sdk/limits)"
   ],
-  "updated": "2026-10-17"
+  "updated": "2026-10-20"
 }
