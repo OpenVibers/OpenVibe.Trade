@@ -65,6 +65,7 @@ function createInstruments({ store }) {
         insertAlias: db.prepare(`INSERT INTO trade_instrument_aliases (instrument_id, kind, value, normalized, added_by, created_at)
                                  VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`),
         count: db.prepare("SELECT COUNT(*) AS n FROM trade_instruments WHERE status = 'active'"),
+        countByKind: db.prepare("SELECT kind, COUNT(*) AS n FROM trade_instruments WHERE status = 'active' GROUP BY kind"),
         // The home's list: the instruments with the newest document or observation first, then the rest by symbol (about
         // 10,000 companies from SEC's list, most of them quiet on any given day).
         page: db.prepare(`SELECT i.* FROM trade_instruments i
@@ -130,6 +131,8 @@ function createInstruments({ store }) {
         indexCandidates: async () => await q.indexCandidates.all(),
         withPending: async () => await q.withPending.all(),
         editorAdded: async () => await q.editorAdded.all(),
+        /** kind → active instruments of that kind ({ equity: 8028, currency: 28, … }). */
+        async countByKind() { return Object.fromEntries((await q.countByKind.all()).map((r) => [r.kind, Number(r.n)])); },
         async page({ limit = 50, offset = 0 } = {}) {
             return { total: (await q.count.get()).n, instruments: await q.page.all(limit, offset) };
         },

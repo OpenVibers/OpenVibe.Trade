@@ -3,7 +3,10 @@
 /**
  * Public pages, server-rendered and complete without JavaScript:
  *
- *   GET /                   instruments, recent documents, feeds
+ *   GET /                   the front page: numbers, AI briefs, euro rates, new reports, filings by form, newest
+ *                           filings, companies with something new, questions (render/home.js)
+ *   GET /instruments        every instrument, the newest filing or figure first (was the front page's list)
+ *   GET /filings[?form=]    the newest SEC filings, optionally of one form type
  *   GET /resolve?q=         deterministic resolution (CIK → ticker → exact name); one match → 302
  *   GET /i/:symbol          the instrument page: observations with timestamps and sources, context
  *                           with its disclosure, documents, source freshness ("stale since")
@@ -22,6 +25,7 @@ const rateLimit = require('express-rate-limit');
 const { ApiError } = require('./errors');
 const { paginate } = require('openvibe-publishing/ssr');
 const views = require('../render/views');
+const home = require('../render/home');
 const { SITE_SUMMARY } = require('../render/layout');
 const { define } = require('./routes');
 
@@ -35,36 +39,89 @@ function createPages(ctx) {
         title: 'What shipped on OpenVibe.Trade', canonical: urls.abs('/updates'), decision: listing('/updates'),
         body: frame.updatesBody({ service: 'trade', siteName: 'OpenVibe.Trade' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>`,
     }));
-    define(router, 'get', '/', 'showHome', async (req, res) => {
-        const pageNo = Math.max(parseInt(req.query.page, 10) || 1, 1);
-        const per = 50;
-        const first = await instruments.page({ limit: 0, offset: 0 });
-        const pager = paginate({ page: pageNo, perPage: per, total: first.total, href: (p) => (p === 1 ? '/' : `/?page=${p}`) });
-        if (pager.outOfRange && first.total) return common.notFound(req, res);
-        const page = await instruments.page({ limit: pager.limit, offset: pager.offset });
-        // Each listed instrument's headline number on the list itself: its latest price, close or rate (else its first
-        // metric), with when it was observed and whether its source is current. Fifty at most per page.
-        const now = Date.now();
-        const latest = new Map(await Promise.all(page.instruments.map(async (i) => {
+    /** Each listed instrument's headline number (its latest price, close or rate, else its first metric), else its newest filing. */
+    async function headlines(list, now) {
+        const latest = new Map(await Promise.all(list.map(async (i) => {
             const rows = await observations.latest(i);
             const pick = ['price', 'close', 'rate'].map((m) => rows.find((o) => o.metric === m)).find(Boolean) || rows[0];
             return [i.id, pick ? await observations.dto(pick, { now }) : null];
         })));
         // Without a headline number, the newest filing stands in on the list.
-        const latestDocs = new Map((await Promise.all(page.instruments.filter((i) => !latest.get(i.id)).map(async (i) => {
+        const latestDocs = new Map((await Promise.all(list.filter((i) => !latest.get(i.id)).map(async (i) => {
             const [d] = await documents.forInstrument(i, { limit: 1 });
             return d ? [i.id, documents.dto(d)] : null;
         }))).filter(Boolean));
-        const recent = (await Promise.all((await documents.recent(10)).map(async (d) => ({ document: documents.dto(d), instrument: await instruments.get(d.instrument_id) }))));
-        const canonical = urls.abs(pageNo === 1 ? '/' : `/?page=${pageNo}`);
+        return { latest, latestDocs };
+    }
+    const withInstruments = async (docs) => await Promise.all(docs.map(async (d) => ({ document: documents.dto(d), instrument: await instruments.get(d.instrument_id) })));
+    const DAY = 24 * 3600 * 1000;
+    const FEEDS = [{ type: 'rss', href: '/feed.xml', title: 'Recent documents (RSS)' }, { type: 'atom', href: '/atom.xml', title: 'Recent documents (Atom)' }, { type: 'json', href: '/feed.json', title: 'Recent documents (JSON Feed)' }];
+
+    // The front page (render/home.js): the numbers, briefs, rates, reports, filings by form, newest filings and movers.
+    define(router, 'get', '/', 'showHome', async (req, res) => {
+        // The instruments list's later pages moved to /instruments with the front page.
+        const p = parseInt(req.query.page, 10);
+        if (p > 1) { common.vary(res); res.set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })); return res.redirect(301, `/instruments?page=${p}`); }
+        const now = ctx.store.now();
+        const [kinds, docStats, obsStats, briefStats, briefs, rateRows, reportDocs, forms, recentDocs, movers] = await Promise.all([
+            instruments.countByKind(), documents.stats(now - DAY), observations.stats(), ctx.briefs.stats(), ctx.briefs.recent(6),
+            observations.rates(), documents.recentOf(['10-K', '10-Q', '20-F', '40-F'], { limit: 8 }), documents.formCounts(now - 7 * DAY),
+            documents.recent(10), instruments.page({ limit: 12, offset: 0 }),
+        ]);
+        const rates = await Promise.all(rateRows.map(async (r) => ({ ...r, dto: await observations.dto(r.latest, { now }) })));
+        const faq = home.faqItems();
         common.page(req, res, {
-            title: null, canonical, decision: listing(pageNo === 1 ? '/' : `/?page=${pageNo}`),
+            title: 'SEC filings, company figures, AI briefs', canonical: urls.abs('/'), decision: listing('/'),
+            description: 'SEC filings as they arrive, the figures inside them, euro reference rates and AI briefs that cite every number, for about 8,000 US companies. Information only.',
             // The home page carries the site's ai-summary meta and WebPage JSON-LD (v1.3.0 forwards it).
-            summary: pageNo === 1 ? SITE_SUMMARY : null,
-            styles: pageNo === 1 ? [showcase.STYLESHEET] : [],
-            feeds: [{ type: 'rss', href: '/feed.xml', title: 'Recent documents (RSS)' }, { type: 'atom', href: '/atom.xml', title: 'Recent documents (Atom)' }, { type: 'json', href: '/feed.json', title: 'Recent documents (JSON Feed)' }],
-            jsonLd: [seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en' })],
-            body: views.home({ page, recent, urls, sync: await sync.state(), pager, latest, latestDocs, briefs: pageNo === 1 ? await ctx.briefs.recent(6) : [] }),
+            summary: SITE_SUMMARY, styles: [showcase.STYLESHEET], bodyClass: 'home', feeds: FEEDS,
+            jsonLd: [
+                seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en', potentialAction: { '@type': 'SearchAction', target: `${urls.abs('/resolve')}?q={q}`, 'query-input': 'required name=q' } }),
+                home.faqJsonLd(faq),
+            ],
+            body: home.homePage({
+                stats: {
+                    companies: (kinds.equity || 0) + (kinds.fund || 0), currencies: kinds.currency || 0, instruments: Object.values(kinds).reduce((a, b) => a + b, 0),
+                    filings: docStats.total, filingsDay: docStats.day, figureCompanies: obsStats.companies, briefs: briefStats.total,
+                },
+                briefs, rates, reports: await withInstruments(reportDocs), forms, recent: await withInstruments(recentDocs),
+                movers: { instruments: movers.instruments, ...await headlines(movers.instruments, now) }, sync: await sync.state(), faq,
+            }, urls),
+        });
+    });
+
+    define(router, 'get', '/instruments', 'showInstruments', async (req, res) => {
+        const pageNo = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const per = 50;
+        const first = await instruments.page({ limit: 0, offset: 0 });
+        const pager = paginate({ page: pageNo, perPage: per, total: first.total, href: (p) => (p === 1 ? '/instruments' : `/instruments?page=${p}`) });
+        if (pager.outOfRange && first.total) return common.notFound(req, res);
+        const page = await instruments.page({ limit: pager.limit, offset: pager.offset });
+        const path = pageNo === 1 ? '/instruments' : `/instruments?page=${pageNo}`;
+        common.page(req, res, {
+            title: pageNo === 1 ? 'Companies and currencies' : `Companies and currencies, page ${pageNo}`, canonical: urls.abs(path), decision: listing(path),
+            description: 'US-listed companies from the SEC\'s list and euro reference currencies, the newest filing or figure first, each with its source and time.',
+            feeds: FEEDS, body: views.instrumentsPage({ page, urls, pager, ...await headlines(page.instruments, ctx.store.now()) }),
+        });
+    });
+
+    // /filings[?form=]: the newest SEC filings (all forms indexable; one form's list is noindex, it repeats the whole).
+    define(router, 'get', '/filings', 'showFilings', async (req, res) => {
+        const form = typeof req.query.form === 'string' && /^[A-Za-z0-9 ./-]{1,20}$/.test(req.query.form) ? req.query.form.toUpperCase() : null;
+        const pageNo = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const forms = form ? [form] : null;
+        const total = await documents.countOf(forms);
+        const base = form ? `/filings?form=${encodeURIComponent(form)}` : '/filings';
+        const pager = paginate({ page: pageNo, perPage: 50, total, href: (p) => (p === 1 ? base : `${base}${form ? '&' : '?'}page=${p}`) });
+        if (pager.outOfRange && total) return common.notFound(req, res);
+        const docs = await withInstruments(await documents.recentOf(forms, { limit: pager.limit, offset: pager.offset }));
+        const path = pageNo === 1 ? base : `${base}${form ? '&' : '?'}page=${pageNo}`;
+        const label = form ? (views.formLabel(form) ? `${views.formLabel(form)}s (${form})` : `${form} filings`) : 'SEC filings as they arrive';
+        common.page(req, res, {
+            title: pageNo === 1 ? label : `${label}, page ${pageNo}`, canonical: urls.abs(form ? '/filings' : path),
+            decision: form ? seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: urls.abs('/filings'), wordCount: 0, noindex: true }, { policy: { minWords: 0 } }) : listing(path),
+            description: 'The newest SEC filings from EDGAR: annual and quarterly reports, current reports, proxies and prospectuses, each with when it was published and retrieved.',
+            feeds: FEEDS, body: views.filingsPage({ docs, pager, form, counts: await documents.formCounts(ctx.store.now() - 7 * DAY), urls }),
         });
     });
 

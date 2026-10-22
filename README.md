@@ -149,7 +149,9 @@ Trade shows only what a source stated:
 
 | Route | What |
 |---|---|
-| `/` | instruments, recent documents, feeds |
+| `/` | the front page (`server/render/home.js`): a company search and the site's numbers, the latest AI briefs, euro reference rates (each currency's newest rate, its date and source, and the change from the same source's previous rate), new 10-K/10-Q reports, the last 7 days' filings by form (plain names), the newest filings, companies with something new, what is here and six questions (FAQPage JSON-LD); `/?page=N` answers 301 to `/instruments?page=N` |
+| `/instruments` | every instrument, the newest filing or figure first (the front page's old list), 50 a page |
+| `/filings`, `/filings?form=` | the newest SEC filings, 50 a page, with the last 7 days' counts by form; one form's list is noindex with `/filings` as its canonical |
 | `/resolve?q=` | resolution; one match → 302 to the instrument |
 | `/i/:symbol`, `/i/:symbol.json` | the instrument page (observations with timestamps and sources, context with disclosure, documents, source freshness, watch/alert forms), and the same data as JSON |
 | `/i/:symbol/documents.xml`, `.atom`, `.json` | the instrument's documents as RSS, Atom and JSON Feed |

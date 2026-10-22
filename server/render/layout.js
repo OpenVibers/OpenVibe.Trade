@@ -41,7 +41,8 @@ let RELEASE = 'dev';
 function setRelease(id) { if (id) RELEASE = String(id); }
 
 const NAV_LINKS = [
-    { label: 'Instruments', href: '/' },
+    { label: 'Companies', href: '/instruments' },
+    { label: 'Filings', href: '/filings' },
     { label: 'Sources', href: '/sources' },
     { label: 'Watchlists', href: '/watchlists' },
 ];

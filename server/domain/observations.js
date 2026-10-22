@@ -41,6 +41,17 @@ function createObservations({ store, ctx }) {
         history: db.prepare(`SELECT * FROM trade_market_observations WHERE instrument_id = @instrument AND (@metric::text IS NULL OR metric = @metric)
                              AND observed_at < @before ORDER BY observed_at DESC, recorded_at DESC LIMIT @limit`),
         count: db.prepare('SELECT COUNT(*) AS n FROM trade_market_observations WHERE instrument_id = ?'),
+        // The front page's currency table: each currency's two newest rates from the source of its newest one (so the
+        // change compares like with like), and how many companies have figures from their filings.
+        rates: db.prepare(`SELECT * FROM (
+                             SELECT o.*, i.symbol, i.name,
+                                    ROW_NUMBER() OVER (PARTITION BY o.instrument_id, o.source_key ORDER BY o.observed_at DESC, o.recorded_at DESC, o.id DESC) AS rn,
+                                    FIRST_VALUE(o.source_key) OVER (PARTITION BY o.instrument_id ORDER BY o.observed_at DESC, o.recorded_at DESC, o.id DESC) AS newest_source
+                               FROM trade_market_observations o JOIN trade_instruments i ON i.id = o.instrument_id
+                              WHERE i.kind = 'currency' AND i.status = 'active' AND o.metric = 'rate') x
+                           WHERE x.source_key = x.newest_source AND x.rn <= 2 ORDER BY x.symbol, x.observed_at DESC`),
+        stats: db.prepare(`SELECT COUNT(*) AS total, COUNT(DISTINCT o.instrument_id) FILTER (WHERE i.kind <> 'currency') AS companies
+                             FROM trade_market_observations o JOIN trade_instruments i ON i.id = o.instrument_id`),
     };
 
     function validate(input, instrument) {
@@ -82,6 +93,18 @@ function createObservations({ store, ctx }) {
         get: async (id) => await q.byId.get(id) || null,
         count: async (instrument) => (await q.count.get(instrument.id)).n,
         latest: async (instrument) => await q.latest.all(instrument.id),
+        /** Each currency's newest rate and the one before it from the same source: [{ latest, previous|null, symbol, name }]. */
+        async rates() {
+            const by = new Map();
+            for (const r of await q.rates.all()) {
+                const e = by.get(r.symbol) || { symbol: r.symbol, name: r.name, latest: null, previous: null };
+                if (!e.latest) e.latest = r; else if (!e.previous) e.previous = r;
+                by.set(r.symbol, e);
+            }
+            return [...by.values()];
+        },
+        /** { total observations, companies with figures } */
+        stats: async () => { const r = await q.stats.get(); return { total: Number(r.total), companies: Number(r.companies) }; },
         async history(instrument, { metric = null, before = null, limit = 50 } = {}) {
             const b = parseTime(before);
             return await q.history.all({ instrument: instrument.id, metric: metric == null ? null : metric, before: b == null ? Number.MAX_SAFE_INTEGER : b, limit: Math.min(Math.max(Number(limit) || 50, 1), 500) });

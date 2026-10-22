@@ -83,42 +83,64 @@ function clip(text, n) {
     return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), n - 20))}…`;
 }
 
-function home({ page, recent, urls, sync, pager, latest = new Map(), latestDocs = new Map(), briefs = [] }) {
+/** The instruments table: each row's headline number (or newest filing), as on the old front page. */
+function instrumentsTable({ instruments, latest = new Map(), latestDocs = new Map(), urls, caption = null }) {
     // The exchange column only when an instrument on the page has one (a currency has none to record).
-    const exchanges = page.instruments.some((i) => i.exchange);
+    const exchanges = instruments.some((i) => i.exchange);
     // The headline number when there is one; else the newest filing (most companies on a given day only filed); else
     // nothing to show yet beyond the SEC's company list.
     const latestCell = (i, o, d) => (o
         ? html`<td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit} <span class="muted">${labelOf(o.metric)}${o.period ? `, ${o.period}` : html`, ${when(o.observed_at)}`}</span>${o.freshness && o.freshness.stale ? html` ${staleBadge(o.freshness)}` : ''}</td>`
         : d ? html`<td><a href="${urls.path.instrument(i)}#${d.id}">${d.form_type ? html`<span class="badge">${d.form_type}</span> ` : ''}filed ${when(d.published_at || d.first_seen_at)}</a></td>`
             : html`<td><span class="muted">on the SEC's company list</span></td>`);
-    const rows = page.instruments.map((i) => html`<tr>
+    const rows = instruments.map((i) => html`<tr>
         <td><a href="${urls.path.instrument(i)}"><strong>${i.symbol}</strong></a></td>
         <td>${i.name}</td><td>${i.kind}</td>${exchanges ? html`<td>${i.exchange || html`<span class="muted">not recorded</span>`}</td>` : ''}${latestCell(i, latest.get(i.id), latestDocs.get(i.id))}
     </tr>`);
-    const docs = recent.map((r) => html`<li><a href="${urls.path.instrument(r.instrument)}#${r.document.id}">${r.instrument.symbol}</a>
-        ${r.document.form_type ? html`<span class="badge">${r.document.form_type}</span>` : ''} ${r.document.title || r.document.filer_name || 'Untitled document'}
-        — ${r.document.published_at ? html`published ${when(r.document.published_at)}` : html`<span class="muted">no publication date stated</span>`}, retrieved ${when(r.document.retrieved_at)}</li>`);
-    const first = !pager || pager.page === 1;
-    return html`
-${first ? raw(tradeShowcase()) : html`<h1>Sourced market information</h1>`}
-<p class="muted">What this site is not: there is no order entry, no brokerage, no custody of money or assets, no marketplace and no personal recommendation here.</p>
-<form class="search" id="find" method="get" action="/resolve" role="search">
+    return html`<table tabindex="0" class="data">${caption ? html`<caption>${caption}</caption>` : ''}<thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Kind</th>${exchanges ? html`<th scope="col">Exchange</th>` : ''}<th scope="col">Latest</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/** /instruments: every instrument, the newest filing or figure first (the old front page's list). */
+function instrumentsPage({ page, urls, pager, latest, latestDocs }) {
+    return html`${raw(breadcrumbsHtml([{ name: 'Trade', url: '/' }, { name: 'Companies and currencies' }]))}
+<h1>Companies and currencies</h1>
+<p class="lede">${page.total.toLocaleString('en-US')} instruments: US-listed companies from the SEC's own list and the currencies in the euro reference rates, the newest filing or figure first.</p>
+<form class="search" method="get" action="/resolve" role="search">
   <label for="q">Find an instrument by ticker, CIK or company name</label>
   <input id="q" name="q" type="search" maxlength="200" required>
   <button type="submit">Find</button>
 </form>
-${first ? html`<h2 id="briefs">Latest AI briefs</h2>
-${recentBriefs(briefs, urls)}` : ''}
-<h2>Instruments</h2>
-<p class="muted">Newest filing or figure first.</p>
-${page.instruments.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Kind</th>${exchanges ? html`<th scope="col">Exchange</th>` : ''}<th scope="col">Latest</th></tr></thead><tbody>${rows}</tbody></table>
-${raw(paginationHtml(pager))}`
-        : html`<p class="empty">No instruments have been added yet.</p>`}
-<h2>Recent documents</h2>
-${recent.length ? html`<ul class="docs">${docs}</ul>` : html`<p class="empty">No documents have been recorded yet.</p>`}
-<p>Feeds of recent documents: <a href="/feed.xml">RSS</a> · <a href="/atom.xml">Atom</a> · <a href="/feed.json">JSON Feed</a>. Source freshness: <a href="/sources">sources</a>.${sync && sync.last_ok_at ? html` Last synchronised with OpenVibe.Sources ${when(sync.last_ok_at)}.` : ''}</p>`;
+${page.instruments.length ? html`${instrumentsTable({ instruments: page.instruments, latest, latestDocs, urls })}${raw(paginationHtml(pager))}` : html`<p class="empty">No instruments have been added yet.</p>`}`;
 }
+
+/** One filing as a list line: company, form (with its plain name), title, published and retrieved. */
+function filingLine(r, urls) {
+    return html`<li><a href="${urls.path.instrument(r.instrument)}#${r.document.id}"><strong>${r.instrument.symbol}</strong></a>
+        ${r.document.form_type ? html`<span class="badge" title="${formLabel(r.document.form_type) || ''}">${r.document.form_type}</span>` : ''} ${r.document.title || r.document.filer_name || 'Untitled document'}
+        — ${r.document.published_at ? html`published ${when(r.document.published_at)}` : html`<span class="muted">no publication date stated</span>`}, retrieved ${when(r.document.retrieved_at)}</li>`;
+}
+
+/** /filings[?form=]: the newest SEC filings, optionally of one kind of form. */
+function filingsPage({ docs, pager, form, counts, urls }) {
+    return html`${raw(breadcrumbsHtml([{ name: 'Trade', url: '/' }, { name: 'Filings', url: form ? '/filings' : undefined }, ...(form ? [{ name: form }] : [])].map((c) => (c.url === undefined ? { name: c.name } : c))))}
+<h1>${form ? `${formLabel(form) ? `${formLabel(form)}s` : 'Filings'} (${form})` : 'SEC filings as they arrive'}</h1>
+<p class="lede">Filings from the SEC's EDGAR feed, gathered by OpenVibe.Sources, the newest first, each with when it was published and when it was retrieved. Information only; not investment advice.</p>
+${counts.length ? html`<p class="muted">By form, the last 7 days:</p><ul class="tr-chips">${form ? html`<li><a href="/filings">All forms</a></li>` : ''}${counts.map((c) => html`<li>${c.form_type === form ? html`<span aria-current="page">${c.form_type}<span class="tr-n">${c.count.toLocaleString('en-US')}</span></span>` : html`<a href="/filings?form=${encodeURIComponent(c.form_type)}">${c.form_type}<span class="tr-n"><span class="sr-only">: </span>${c.count.toLocaleString('en-US')}</span></a>`}</li>`)}</ul>` : ''}
+${docs.length ? html`<ul class="docs">${docs.map((r) => filingLine(r, urls))}</ul>${raw(paginationHtml(pager))}` : html`<p class="empty">No filings of this form have been recorded.</p>`}
+<p>Feeds of recent documents: <a href="/feed.xml">RSS</a> · <a href="/atom.xml">Atom</a> · <a href="/feed.json">JSON Feed</a>.</p>`;
+}
+
+/** SEC form types in plain words (the SEC's own descriptions, shortened); unknown forms have none. */
+const FORM_LABEL = {
+    '10-K': 'Annual report', '10-K/A': 'Amended annual report', '10-Q': 'Quarterly report', '10-Q/A': 'Amended quarterly report',
+    '8-K': 'Current report', '8-K/A': 'Amended current report', '6-K': 'Foreign issuer report', '20-F': 'Foreign annual report', '40-F': 'Canadian annual report',
+    'DEF 14A': 'Proxy statement', 'PRE 14A': 'Preliminary proxy statement', 'DEFA14A': 'Additional proxy material',
+    'S-1': 'Registration for a new offering', 'S-1/A': 'Amended registration', 'S-3': 'Shelf registration', 'S-3ASR': 'Automatic shelf registration', 'S-4': 'Merger registration', 'S-8': 'Employee stock plan registration',
+    '424B2': 'Prospectus supplement', '424B3': 'Prospectus', '424B4': 'Final prospectus', '424B5': 'Prospectus supplement',
+    'SC 13D': 'Beneficial ownership report', 'SC 13G': 'Passive ownership report', '11-K': 'Employee plan annual report', 'ARS': 'Annual report to shareholders',
+    'N-CSR': 'Fund shareholder report', '10-D': 'Asset-backed distribution report', 'POS AM': 'Post-effective amendment',
+};
+const formLabel = (f) => FORM_LABEL[f] || null;
 
 // ── Resolve ──────────────────────────────────────────────────────────────────
 
@@ -401,4 +423,4 @@ function errorPage({ status, title, message }) {
     return html`<h1>${title}</h1><p>${message}</p><p class="muted">Error ${status}. <a href="/">All instruments</a></p>`;
 }
 
-module.exports = { home, resolvePage, instrumentPage, sourcesPage, watchlistsPage, editorHome, editorInstrument, errorPage, when };
+module.exports = { instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };

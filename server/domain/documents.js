@@ -30,6 +30,17 @@ function createDocuments({ store, ctx }) {
         countFor: db.prepare('SELECT COUNT(*) AS n FROM trade_source_documents WHERE instrument_id = ? AND removed_at IS NULL'),
         recent: db.prepare(`SELECT d.* FROM trade_source_documents d JOIN trade_instruments i ON i.id = d.instrument_id
                             WHERE d.removed_at IS NULL AND i.status = 'active' ORDER BY COALESCE(d.published_at, d.first_seen_at) DESC, d.id DESC LIMIT ?`),
+        // /filings and the front page: newest first, optionally of some form types; counts by form type since a time.
+        recentOf: db.prepare(`SELECT d.* FROM trade_source_documents d JOIN trade_instruments i ON i.id = d.instrument_id
+                              WHERE d.removed_at IS NULL AND i.status = 'active' AND (@forms::text[] IS NULL OR d.form_type = ANY(@forms::text[]))
+                              ORDER BY COALESCE(d.published_at, d.first_seen_at) DESC, d.id DESC LIMIT @limit OFFSET @offset`),
+        countOf: db.prepare(`SELECT COUNT(*) AS n FROM trade_source_documents d JOIN trade_instruments i ON i.id = d.instrument_id
+                             WHERE d.removed_at IS NULL AND i.status = 'active' AND (@forms::text[] IS NULL OR d.form_type = ANY(@forms::text[]))`),
+        formCounts: db.prepare(`SELECT d.form_type, COUNT(*) AS n FROM trade_source_documents d JOIN trade_instruments i ON i.id = d.instrument_id
+                                WHERE d.removed_at IS NULL AND i.status = 'active' AND d.form_type IS NOT NULL AND COALESCE(d.published_at, d.first_seen_at) > ?
+                                GROUP BY d.form_type ORDER BY n DESC, d.form_type LIMIT 40`),
+        stats: db.prepare(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE d.first_seen_at > ?) AS day, COUNT(DISTINCT d.instrument_id) AS companies
+                             FROM trade_source_documents d WHERE d.removed_at IS NULL`),
     };
 
     const api = {
@@ -38,6 +49,13 @@ function createDocuments({ store, ctx }) {
         forInstrument: async (instrument, { limit = 50, offset = 0 } = {}) => await q.forInstrument.all(instrument.id, limit, offset),
         count: async (instrument) => (await q.countFor.get(instrument.id)).n,
         recent: async (limit = 50) => await q.recent.all(limit),
+        /** Newest documents of these form types (null: any), paginated. */
+        recentOf: async (forms, { limit = 50, offset = 0 } = {}) => await q.recentOf.all({ forms: forms && forms.length ? forms : null, limit, offset }),
+        countOf: async (forms) => Number((await q.countOf.get({ forms: forms && forms.length ? forms : null })).n),
+        /** Form type → documents published (or first seen) since `since`, the most first. */
+        formCounts: async (since) => (await q.formCounts.all(since)).map((r) => ({ form_type: r.form_type, count: Number(r.n) })),
+        /** { total, day (first seen since `since`), companies } over documents still shown. */
+        stats: async (since) => { const r = await q.stats.get(since); return { total: Number(r.total), day: Number(r.day), companies: Number(r.companies) }; },
 
         /** From a mapped Sources item (domain/mapping.js). → { document, created, changed } */
         async upsert(doc, instrument, { traceparent } = {}) {
