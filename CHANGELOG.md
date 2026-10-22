@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The front page is curated (`server/render/home.js`): a company search and the numbers beside the hero (companies, filings in 24 hours, filings recorded, companies with figures, AI briefs, currencies), then AI briefs as cards, euro reference rates as cards with the change from the same source, new 10-K/10-Q reports, the week's filings by form in plain words, the newest filings, companies with something new, what is here and six questions (FAQPage JSON-LD). The instruments list moved to `/instruments` (301 from `/?page=N`); `/filings[?form=]` is new; `/sitemaps/pages.xml` lists `/`, `/instruments`, `/filings` and `/sources` (the sitemap listed nothing before: instrument pages stay noindex until a person reviews their context). The navbar reads Companies, Filings, Sources, Watchlists.
 - Account export and deletion (ADR-033) through `server/domain/account-data.js` over `openvibe-sdk/account-data` (SDK v0.37.0, was v0.35.0):
   - **Deleted:** watchlists, alert rules (with their deliveries) and drafts.
   - **Authorless:** contributed instruments, aliases, purges, context revisions and hand-recorded observations.

@@ -8,6 +8,7 @@
  *   GET /llms-full.txt                     the same map, with a short summary of every indexable
  *                                          instrument (never the source's full text)
  *   GET /sitemap.xml                       sitemap index
+ *   GET /sitemaps/pages.xml                the front page, /instruments, /filings and /sources
  *   GET /sitemaps/instruments.xml          INDEXABLE instrument pages only (the gate decides:
  *                                          person-reviewed context, no stale price); lastmod = the
  *                                          latest instrument, observation or document change
@@ -74,7 +75,9 @@ function createDiscovery(ctx) {
             details: 'Every number on an instrument page is an observation with observed_at, retrieved_at and its source; an instrument without observations shows no number. Stale sources are labelled "stale since <time>" and never replaced. Each instrument page has a JSON twin at /i/<SYMBOL>.json with the same data. AI briefs (OpenVibe.AI) are written only from the SEC numbers and filings on the page, cite each one, are labelled as AI-written and not reviewed by a person, and never give advice; editor context drafted by AI is not published before a person reviews it. There is no custody, order execution, escrow, marketplace or personal advice.',
             sections: [
                 { title: 'Start here', links: [
-                    { title: 'Instruments', url: abs('/'), note: 'all instruments' },
+                    { title: 'Front page', url: abs('/'), note: 'AI briefs, euro reference rates, new annual and quarterly reports, filings by form, newest filings' },
+                    { title: 'Companies and currencies', url: abs('/instruments'), note: 'all instruments, the newest filing or figure first' },
+                    { title: 'Filings', url: abs('/filings'), note: 'the newest SEC filings; /filings?form=10-K for one form type' },
                     { title: 'Source freshness', url: abs('/sources') },
                     { title: 'Sitemap', url: abs('/sitemap.xml') },
                 ] },
@@ -118,7 +121,20 @@ function createDiscovery(ctx) {
         const changes = await pageChanges();
         const times = active.filter((i, n) => decisions[n].indexable).map((i) => pageLastmod(i, changes)).filter(Boolean);
         const newest = times.length ? new Date(Math.max(...times)).toISOString() : null;
-        xml(res, seo.sitemapIndex([{ loc: abs('/sitemaps/instruments.xml'), ...(newest ? { lastmod: newest } : {}) }]));
+        const pagesNewest = (await documents.recent(1))[0];
+        xml(res, seo.sitemapIndex([
+            { loc: abs('/sitemaps/pages.xml'), ...(pagesNewest ? { lastmod: new Date(Math.max(pagesNewest.first_seen_at, pagesNewest.published_at || 0)).toISOString() } : {}) },
+            { loc: abs('/sitemaps/instruments.xml'), ...(newest ? { lastmod: newest } : {}) },
+        ]));
+    });
+
+    // The pages a person browses: the front page, every company and currency, the filings, source freshness. Their
+    // lastmod is the newest filing's (they list it); /sources has none of its own.
+    define(router, 'get', '/sitemaps/pages.xml', 'pagesSitemap', async (_req, res) => {
+        const newest = (await documents.recent(1))[0];
+        const lastmod = newest ? Math.max(newest.first_seen_at, newest.published_at || 0) : null;
+        const decide = (path) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: abs(path), wordCount: 0 }, { policy: { minWords: 0 } });
+        xml(res, seo.sitemap(['/', '/instruments', '/filings', '/sources'].map((path) => ({ loc: abs(path), lastmod: path === '/sources' ? null : lastmod, decision: decide(path) }))).files[0]);
     });
 
     define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {

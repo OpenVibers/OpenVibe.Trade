@@ -160,6 +160,43 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(home.includes('"@type":"WebPage"'), 'the home carries WebPage JSON-LD');
     });
 
+    await check('the front page: one h1, a search, the numbers, its sections and questions (FAQPage JSON-LD); lists moved to /instruments and /filings', async () => {
+        const r = await t.get('/');
+        const body = r.text.slice(r.text.indexOf('<main'));
+        assert.strictEqual((r.text.match(/<h1[\s>]/g) || []).length, 1, 'one h1');
+        assert.ok(body.includes('action="/resolve"') && body.includes('class="tr-stats"') && body.includes('id="recent"') && body.includes('id="movers"') && body.includes('id="faq"'));
+        assert.ok(body.includes('<a href="/filings?form=10-K">Annual report <span class="muted">(10-K)</span>'), 'filings by form, in plain words');
+        assert.ok(body.includes('id="reports"') && body.indexOf('ACME', body.indexOf('id="reports"')) > 0, 'the 10-K among new annual and quarterly reports');
+        assert.ok(!body.includes('id="rates"'), 'no rates section without a currency rate');
+        const ld = [...r.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1]));
+        const faq = ld.find((x) => x['@type'] === 'FAQPage');
+        assert.ok(faq && ld.some((x) => x['@type'] === 'WebSite'));
+        for (const q of faq.mainEntity) assert.ok(body.includes(`<summary>${q.name.replace(/'/g, '&#39;')}</summary>`), `the question is on the page: ${q.name}`);
+        assert.doesNotMatch(body, /coming soon/i);
+        const old = await t.get('/?page=2');
+        assert.deepStrictEqual([old.status, old.headers.get('location')], [301, '/instruments?page=2']);
+        const list = await t.get('/instruments');
+        assert.ok(list.status === 200 && list.text.includes('<h1>Companies and currencies</h1>') && list.text.includes('Acme Corp'));
+        const filings = await t.get('/filings');
+        assert.ok(filings.status === 200 && filings.text.includes('ACME') && !/name="robots" content="noindex/.test(filings.text));
+        const tenK = await t.get('/filings?form=10-K');
+        assert.ok(tenK.text.includes('Annual reports (10-K)') && /name="robots" content="noindex/.test(tenK.text), 'one form: noindex, canonical /filings');
+        assert.ok((await t.get('/sitemap.xml')).text.includes('https://openvibe.trade/sitemaps/pages.xml'));
+        const pages = (await t.get('/sitemaps/pages.xml')).text;
+        for (const p of ['/', '/instruments', '/filings', '/sources']) assert.ok(pages.includes(`<loc>https://openvibe.trade${p}</loc>`), p);
+    });
+
+    await check('the front page\'s euro rates: each currency\'s newest rate, its date and source, and the change from the same source', async () => {
+        const usd = await t.instrument({ symbol: 'USD', name: 'US Dollar', kind: 'currency' });
+        await t.observe(usd, { metric: 'rate', value: '1.1200', unit: 'USD', currency: 'USD', source_key: 'frankfurter-eur-rates', source_ref: 'usd-1', observed_at: t.iso(t.T0 - 2 * 86400e3), retrieved_at: t.iso(t.T0) });
+        await t.observe(usd, { metric: 'rate', value: '1.1312', unit: 'USD', currency: 'USD', source_key: 'frankfurter-eur-rates', source_ref: 'usd-2', observed_at: t.iso(t.T0 - 86400e3), retrieved_at: t.iso(t.T0) });
+        const body = (await t.get('/')).text;
+        const at = body.indexOf('id="rates"');
+        assert.ok(at > 0 && body.indexOf('<data value="1.1312">1.1312</data>', at) > at, 'the newest rate');
+        assert.ok(body.includes('+1.00%'), 'the change from the previous rate of the same source');
+        assert.ok(body.includes('Frankfurter (ECB data)'));
+    });
+
     await t.close();
     done();
 })();

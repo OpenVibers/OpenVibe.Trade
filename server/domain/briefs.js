@@ -34,6 +34,7 @@ function createBriefs({ store, config, ctx, ai, log = console }) {
                             WHERE i.status = 'active' AND b.id = (SELECT id FROM trade_ai_briefs x WHERE x.instrument_id = b.instrument_id ORDER BY created_at DESC, id DESC LIMIT 1)
                             ORDER BY b.created_at DESC LIMIT ?`),
         lastHour: db.prepare('SELECT COUNT(*) AS n FROM trade_ai_briefs WHERE created_at > ?'),
+        stats: db.prepare('SELECT COUNT(*) AS n, COUNT(DISTINCT instrument_id) AS companies FROM trade_ai_briefs'),
         insert: db.prepare(`INSERT INTO trade_ai_briefs (id, instrument_id, summary, points, cites, gaps, as_of, inputs_hash, run_id, model, trigger, created_at)
                             VALUES (@id, @instrument_id, @summary, @points, @cites, @gaps, @as_of, @inputs_hash, @run_id, @model, @trigger, @created_at)`),
         series: db.prepare(`SELECT * FROM trade_market_observations WHERE instrument_id = ?
@@ -187,6 +188,8 @@ function createBriefs({ store, config, ctx, ai, log = console }) {
         inputsFor,
         latest: async (instrument) => view(await q.latest.get(instrument.id)),
         recent: async (limit = 8) => (await q.recent.all(limit)).map(view),
+        /** { briefs written, companies with one } */
+        stats: async () => { const r = await q.stats.get(); return { total: Number(r.n), companies: Number(r.companies) }; },
         due: async (limit) => await q.due.all(limit),
         lastHour,
     };
