@@ -21,8 +21,8 @@ h2 { font-size: 1.3rem; margin: 1.8rem 0 .5rem; }
 .lede { color: var(--text-secondary, #96a7c2); font-size: 1.05rem; }
 .meta, .muted, .empty { color: var(--text-muted, #7386a3); font-size: .92rem; }
 .badge { display: inline-block; font-size: .75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border-light, #2c3d5c); color: var(--text-secondary); vertical-align: middle; }
-.badge.stale { border-color: var(--warning, #f59e0b); color: var(--warning, #f59e0b); font-weight: 600; }
-.badge.fresh { border-color: var(--success, #22c55e); color: var(--success, #22c55e); }
+.badge.stale { border-color: var(--warning, #f59e0b); color: var(--warning-text, var(--warning, #f59e0b)); font-weight: 600; }
+.badge.fresh { border-color: var(--success, #22c55e); color: var(--success-text, var(--success, #22c55e)); }
 table.data { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: .95rem; }
 table.data caption { text-align: left; color: var(--text-muted, #7386a3); font-size: .85rem; padding-bottom: 4px; }
 table.data th, table.data td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #1f2d47); vertical-align: top; }
@@ -92,8 +92,8 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
 .tr-small { font-size: .82rem; margin-top: auto !important; }
 .tr-wrap { overflow-x: auto; }
 .tr-rates th[scope=row] { font-weight: 600; white-space: nowrap; }
-.tr-up { color: var(--success, #22c55e); font-weight: 600; }
-.tr-down { color: var(--warning, #f59e0b); font-weight: 600; }
+.tr-up { color: var(--success-text, var(--success, #22c55e)); font-weight: 600; }
+.tr-down { color: var(--warning-text, var(--warning, #f59e0b)); font-weight: 600; }
 .tr-chips { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .tr-chips li { min-width: 0; max-width: 100%; }
 .tr-chips a, .tr-chips [aria-current] { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-light, #2c3d5c); background: var(--bg-secondary, #0f1729); color: var(--text-primary, #e6edf7); text-decoration: none; font-size: .92rem; overflow-wrap: anywhere; }
