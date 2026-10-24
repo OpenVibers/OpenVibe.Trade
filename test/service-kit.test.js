@@ -101,6 +101,12 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer(); 
             await new Promise((r) => setTimeout(r, 300));
             const exited = once(child, 'exit');
             child.kill('SIGTERM');
+            // End the body only once the drain has begun: ended at once, the request could be answered before the signal
+            // was handled, without Connection: close (CI, 2026-10-24, Trade#90). The kit logs the stop, runs its stop
+            // steps, then marks every response in flight (openvibe-sdk service/graceful.js drain()), so: the log, then a
+            // moment for those steps.
+            for (let i = 0; i < 250 && !/\[Trade\] SIGTERM: stopping/.test(log); i++) await new Promise((r) => setTimeout(r, 20));
+            await new Promise((r) => setTimeout(r, 250));
             held.end('&name=Held');
 
             const res = await inFlight;
