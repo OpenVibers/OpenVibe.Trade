@@ -31,7 +31,7 @@ tr.is-stale td, tr.is-stale th { background: rgba(245, 158, 11, .07); }
 .docs { list-style: none; padding: 0; }
 .docs li { padding: 8px 0; border-bottom: 1px solid var(--border, #1f2d47); }
 .docs li:target, tr:target { outline: 2px solid var(--accent, #3b82f6); }
-.briefs { list-style: none; padding: 0; display: grid; gap: 10px; }
+.briefs { list-style: none; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .briefs li { padding: 12px 14px; border: 1px solid var(--border, #1f2d47); border-radius: 12px; background: var(--bg-card, #131c2e); }
 .briefs p { margin: 6px 0 4px; }
 .ai-brief { border-left: 3px solid var(--accent, #3b82f6); padding: 2px 0 2px 14px; }
