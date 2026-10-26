@@ -18,8 +18,8 @@ const BUDGETS = {
     jsRawKB: 268,   // 263.4 with shared 4.11.0's seasonal navbar; 254.1 with openvibe-shared 4.9.0 (status text twins in every theme, 2026-10-23); 246.2 with openvibe-shared 4.2.x (Ask Actor in the navbar, 2026-10-15); 239.1 (212.2 before openvibe-shared/shell's web-runtime.js)
     jsBrotliKB: 67,   // 65.3 Shared 4.12.0: the light/dark switch, the seasonal mark and the theme pairs; 61.7 with shared 4.11.0's seasonal navbar; 59.1 with openvibe-shared 4.4.0 (every site in the launcher, 2026-10-17); 56.3 (49.9 before web-runtime.js)
     cssFiles: 2,   // 2 (trade.css, openvibe-shared showcase.css)
-    cssRawKB: 26,   // ~23 with the front page's numbers, cards, rate cards, chips and questions (2026-10-22); 18.0 before (4.7 before showcase.css)
-    cssBrotliKB: 6,   // ~5.3 with the front page (2026-10-22); 4.5 with the tablet table rule (1.3 before showcase.css)
+    cssRawKB: 33,   // 28.5 with Shared 4.13.0 (2026-10-26: account links); ~23 with the front page's numbers, cards, rate cards, chips and questions (2026-10-22); 18.0 before (4.7 before showcase.css)
+    cssBrotliKB: 8,   // 6.3 with Shared 4.13.0 (2026-10-26: account links); ~5.3 with the front page (2026-10-22); 4.5 with the tablet table rule (1.3 before showcase.css)
     externalFiles: 1,   // 0
 };
 
