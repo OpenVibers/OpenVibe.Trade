@@ -121,7 +121,6 @@ function faqJsonLd(items) {
 function homePage(d, urls) {
     const s = d.stats;
     const hero = html`<section class="sc-hero sc-split tr-hero"><div class="sc-hero-main">
-<p class="sc-eyebrow">OpenVibe.Trade</p>
 <h1>Market information that shows<span class="sc-accent"> its source</span></h1>
 <p class="sc-hero-lede">US-listed companies from the SEC's own list, their filings as they arrive, the key numbers in those filings, euro reference rates and short AI briefs that cite every figure. Every value says when it was observed and which source stated it.</p>
 <form class="search tr-search" id="find" method="get" action="/resolve" role="search"><label class="sr-only" for="q">Find a company by ticker, CIK or name</label><input id="q" name="q" type="search" maxlength="200" required placeholder="Ticker, CIK or company name, like AAPL"><button type="submit">Find</button></form>
