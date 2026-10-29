@@ -52,6 +52,12 @@ const NAV_LINKS = [
  *    body (HTML), viewer, config, path, bodyClass, summary (one-line AI summary; with facts, updated
  *    and url it becomes the ai-summary meta and WebPage JSON-LD via openvibe-publishing/layout)
  */
+// The Markdown twin of this page (openvibe-shared/agent-layer): the head names it, so a reader that
+// already has the HTML finds the twin from it. The twin's address is this page's own address + '.md'.
+const agentHeadTags = (o) => {
+    const canonical = o.canonical || (o.config && o.config.baseUrl ? `${o.config.baseUrl}${String(o.path || '/').split('?')[0]}` : null);
+    return canonical ? require('openvibe-shared/agent-layer').linkHeaderTags(canonical, '/llms.txt').head : '';
+};
 function renderPage(o) {
     if (!o.decision) throw new TypeError('renderPage needs the gate decision');
     const viewer = o.viewer || { kind: 'anonymous' };
@@ -82,6 +88,8 @@ function renderPage(o) {
         title: o.title ? `${o.title} · ${SITE_NAME}` : `${SITE_NAME} — sourced market information`,
         description: o.description || `Instruments, timestamped observations and filings with their sources. ${DISCLAIMER}`,
         canonical: o.canonical,
+        // The head names the page's own Markdown twin (openvibe-shared/agent-layer).
+        head: agentHeadTags(o),
         decision: o.decision,
         type: o.type || 'website',
         image: o.image,
