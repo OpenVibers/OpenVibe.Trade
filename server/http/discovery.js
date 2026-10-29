@@ -8,7 +8,7 @@
  *   GET /llms-full.txt                     the same map, with a short summary of every indexable
  *                                          instrument (never the source's full text)
  *   GET /sitemap.xml                       sitemap index
- *   GET /sitemaps/pages.xml                the front page, /instruments, /filings and /sources
+ *   GET /sitemaps/pages.xml                the front page, /instruments and /filings
  *   GET /sitemaps/instruments.xml          INDEXABLE instrument pages only (the gate decides:
  *                                          person-reviewed context, no stale price); lastmod = the
  *                                          latest instrument, observation or document change
@@ -128,13 +128,14 @@ function createDiscovery(ctx) {
         ]));
     });
 
-    // The pages a person browses: the front page, every company and currency, the filings, source freshness. Their
-    // lastmod is the newest filing's (they list it); /sources has none of its own.
+    // The pages a person browses: the front page, every company and currency, the filings. Their lastmod is the newest
+    // filing's (they list it). /sources is noindex (it is a freshness table a crawler has no use for), so it is kept
+    // out of the sitemap: a sitemap must not list a page that says noindex.
     define(router, 'get', '/sitemaps/pages.xml', 'pagesSitemap', async (_req, res) => {
         const newest = (await documents.recent(1))[0];
         const lastmod = newest ? Math.max(newest.first_seen_at, newest.published_at || 0) : null;
         const decide = (path) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: abs(path), wordCount: 0 }, { policy: { minWords: 0 } });
-        xml(res, seo.sitemap(['/', '/instruments', '/filings', '/sources'].map((path) => ({ loc: abs(path), lastmod: path === '/sources' ? null : lastmod, decision: decide(path) }))).files[0]);
+        xml(res, seo.sitemap(['/', '/instruments', '/filings'].map((path) => ({ loc: abs(path), lastmod, decision: decide(path) }))).files[0]);
     });
 
     define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {

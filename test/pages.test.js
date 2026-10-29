@@ -183,7 +183,12 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(tenK.text.includes('Annual reports (10-K)') && /name="robots" content="noindex/.test(tenK.text), 'one form: noindex, canonical /filings');
         assert.ok((await t.get('/sitemap.xml')).text.includes('https://openvibe.trade/sitemaps/pages.xml'));
         const pages = (await t.get('/sitemaps/pages.xml')).text;
-        for (const p of ['/', '/instruments', '/filings', '/sources']) assert.ok(pages.includes(`<loc>https://openvibe.trade${p}</loc>`), p);
+        for (const p of ['/', '/instruments', '/filings']) assert.ok(pages.includes(`<loc>https://openvibe.trade${p}</loc>`), p);
+        // /sources is noindex, so it must not be in a sitemap; the page itself stays reachable and says so.
+        assert.ok(!pages.includes('https://openvibe.trade/sources'), 'a noindex page is not listed in the sitemap');
+        const sources = await t.get('/sources');
+        assert.strictEqual(sources.status, 200);
+        assert.ok(/name="robots" content="noindex/.test(sources.text), 'source freshness stays noindex');
     });
 
     await check('the front page\'s euro rates: each currency\'s newest rate, its date and source, and the change from the same source', async () => {
