@@ -115,10 +115,10 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
 .tr-fold > summary:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: -2px; border-radius: 14px; }
 .tr-fold .sc-sec { margin: 0; max-width: none; padding: 0 16px 16px; }
 @media (max-width: 600px) {
-  .tr-cards, .tr-rates, .tr-stats { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; scrollbar-width: none; gap: 10px; margin-left: -16px; margin-right: -16px; padding: 0 16px 4px; }
-  .tr-cards::-webkit-scrollbar, .tr-rates::-webkit-scrollbar, .tr-stats::-webkit-scrollbar { display: none; }
+  .tr-cards, .tr-sec .tr-rates, .tr-stats { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; scrollbar-width: none; gap: 10px; margin-left: -16px; margin-right: -16px; padding: 0 16px 4px; }
+  .tr-cards::-webkit-scrollbar, .tr-sec .tr-rates::-webkit-scrollbar, .tr-stats::-webkit-scrollbar { display: none; }
   .tr-cards > li { flex: 0 0 84%; scroll-snap-align: start; }
-  .tr-rates > li { flex: 0 0 46%; scroll-snap-align: start; }
+  .tr-sec .tr-rates > li { flex: 0 0 46%; scroll-snap-align: start; }
   .tr-stats > li { flex: 0 0 auto; width: 132px; scroll-snap-align: start; }
   .tr-sec .tr-chips > li:nth-child(n+9), .tr-sec > .docs > li:nth-child(n+6) { display: none; }
   .tr-sec[aria-labelledby="movers"] tbody tr:nth-child(n+9) { display: none; }
