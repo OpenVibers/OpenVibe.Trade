@@ -124,7 +124,7 @@ function homePage(d, urls) {
 <h1>Market information that shows<span class="sc-accent"> its source</span></h1>
 <p class="sc-hero-lede">US-listed companies from the SEC's own list, their filings as they arrive, the key numbers in those filings, euro reference rates and short AI briefs that cite every figure. Every value says when it was observed and which source stated it.</p>
 <form class="search tr-search" id="find" method="get" action="/resolve" role="search"><label class="sr-only" for="q">Find a company by ticker, CIK or name</label><input id="q" name="q" type="search" maxlength="200" required placeholder="Ticker, CIK or company name, like AAPL"><button type="submit">Find</button></form>
-<div class="sc-actions"><a class="sc-btn sc-primary" href="/filings">Latest filings</a><a class="sc-btn" href="#briefs">AI briefs</a><a class="sc-btn" href="/watchlists">Watchlists and alerts</a></div>
+<div class="sc-actions"><a class="sc-btn sc-primary" href="/filings">Latest filings</a><a class="sc-btn" href="#briefs">AI briefs</a></div>
 </div>
 <div class="sc-hero-aside">${stats([
         { n: s.companies, label: 'companies on the SEC\'s list', href: '/instruments' },
@@ -143,8 +143,7 @@ ${section({ id: 'reports', title: 'New annual and quarterly reports', lede: 'The
 ${section({ id: 'forms', title: 'Filed in the last 7 days', lede: 'Filings by form type, the most first.', more: { href: '/filings', label: 'Every filing' }, body: formChips(d.forms) })}
 ${section({ id: 'recent', title: 'Newest filings', lede: 'As they arrive from the SEC, each with when it was published and when it was retrieved.', more: { href: '/filings', label: 'More filings' }, body: d.recent.length ? html`<ul class="docs">${d.recent.map((r) => filingLine(r, urls))}</ul>` : '' })}
 ${section({ id: 'movers', title: 'Companies with something new', lede: 'The newest filing or figure first.', more: { href: '/instruments', label: `All ${count(s.instruments)} companies and currencies` }, body: d.movers.instruments.length ? instrumentsTable({ instruments: d.movers.instruments, latest: d.movers.latest, latestDocs: d.movers.latestDocs, urls }) : '' })}
-${raw(showcase.features({
-        title: 'What is here',
+<div class="tr-sec"><details class="tr-fold"><summary>What is here<span>companies, numbers, briefs, filings, alerts</span></summary>${raw(showcase.features({
         items: [
             { icon: 'ov:search', title: 'Find a company', text: 'By ticker, SEC CIK or company name. One match takes you straight there; several are listed, never guessed between.', href: '/instruments' },
             { icon: 'ov:history', title: 'The numbers from the filings', text: 'Revenue, net income, EPS, cash flow and the balance sheet, exactly as each company filed them with the SEC, each with its period and filing.' },
@@ -153,7 +152,7 @@ ${raw(showcase.features({
             { icon: 'ov:bell', title: 'Watchlists and alert rules', text: 'Private to you when signed in: an alert for a new filing or a number crossing a line.', href: '/watchlists' },
             { icon: 'ov:check', title: 'Source freshness', text: 'Every source with when it last answered; a source that falls behind marks its values stale.', href: '/sources' },
         ],
-    }))}
+    }))}</details></div>
 <section class="tr-sec" aria-labelledby="faq"><div class="tr-head"><h2 id="faq">Questions and answers</h2></div>
 <div class="tr-faq">${d.faq.map((x) => html`<details><summary>${x.q}</summary><p>${x.a}</p></details>`)}</div></section>
 <p>Feeds of recent documents: <a href="/feed.xml">RSS</a> · <a href="/atom.xml">Atom</a> · <a href="/feed.json">JSON Feed</a>. Source freshness: <a href="/sources">sources</a>.${d.sync && d.sync.last_ok_at ? html` Last synchronised with OpenVibe.Sources ${when(d.sync.last_ok_at)}.` : ''}</p>`;
