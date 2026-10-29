@@ -8,7 +8,7 @@
  *   GET /llms-full.txt                     the same map, with a short summary of every indexable
  *                                          instrument (never the source's full text)
  *   GET /sitemap.xml                       sitemap index
- *   GET /sitemaps/pages.xml                the front page, /instruments, /filings and /sources
+ *   GET /sitemaps/pages.xml                the front page, /instruments and /filings (not /sources: it is noindex)
  *   GET /sitemaps/instruments.xml          INDEXABLE instrument pages only (the gate decides:
  *                                          person-reviewed context, no stale price); lastmod = the
  *                                          latest instrument, observation or document change
@@ -24,6 +24,26 @@ const sharedSeo = require('openvibe-shared/seo');
 const cache = require('openvibe-shared/cache-policy');
 const { define } = require('./routes');
 const { DISCLAIMER, SITE_NAME, SITE_SUMMARY } = require('../render/layout');
+
+/**
+ * The public page catalogue: /sitemaps/pages.xml lists the entries marked for the sitemap and
+ * /llms-full.txt describes every entry, so the two artifacts cannot drift apart. Entity pages are
+ * appended from the database below. /sources is public but noindex — it is freshness telemetry, not
+ * a landing page — so it is described for AI readers and deliberately left out of the sitemap.
+ */
+const PUBLIC_PAGES = [
+    { path: '/', sitemap: true, title: 'OpenVibe.Trade home', text: 'AI briefs written only from SEC numbers and filings, euro reference rates, new annual and quarterly reports, and the newest filings by form. Information only; there is no trading here.' },
+    { path: '/instruments', sitemap: true, title: 'Companies and currencies', text: 'Every instrument OpenVibe.Trade covers, the newest filing or figure first; each page states its observations, their source and when they were retrieved.' },
+    { path: '/filings', sitemap: true, title: 'Filings', text: 'The newest SEC filings across instruments; /filings?form=10-K filters to one form type.' },
+    { path: '/sources', sitemap: false, title: 'Source freshness', text: 'The freshness of every data source, its last successful sync and any error. Public but noindex: a status page, not a landing page.' },
+    { path: '/i/:symbol', title: 'One instrument page', text: 'One company or currency: observations with observed_at, retrieved_at and their source, the reviewed context, filings and source freshness. Append .json for the same data as JSON; /i/<SYMBOL>/documents.xml, .atom and .json are its document feeds.' },
+];
+
+/** The legal pages every OpenVibe site serves, named from the shared kit rather than retyped here. */
+function legalPages() {
+    const labels = { '/terms': 'Terms of use', '/privacy': 'Privacy policy', '/dmca': 'DMCA and takedown policy' };
+    return require('openvibe-shared/legal').PATHS.map((path) => ({ path, title: labels[path] || path.slice(1), text: `The ${(labels[path] || path.slice(1)).toLowerCase()} for OpenVibe.Trade, served by the site itself.` }));
+}
 
 function createDiscovery(ctx) {
     const { config, store, instruments, documents, indexing, context, urls, common } = ctx;
@@ -96,13 +116,14 @@ function createDiscovery(ctx) {
     define(router, 'get', '/llms-full.txt', 'llmsFullTxt', async (_req, res) => {
         const active = await instruments.indexCandidates();
         const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
-        const pages = await Promise.all(active.filter((_i, n) => decisions[n].indexable).map(async (i) => {
+        const instrumentsPages = await Promise.all(active.filter((_i, n) => decisions[n].indexable).map(async (i) => {
             const rev = await context.published(i);
             return { title: `${i.symbol} — ${i.name}`, url: urls.instrument(i), text: rev ? String(rev.text || '').replace(/\s+/g, ' ').trim().slice(0, 300) : '' };
         }));
+        const pages = [...PUBLIC_PAGES, ...legalPages()].map((p) => ({ url: abs(p.path), title: p.title, text: p.text }));
         res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(sharedSeo.llmsFull({
             site: SITE_NAME, summary: SITE_SUMMARY, base: config.baseUrl, maxBytes: 512 * 1024,
-            sections: [{ title: 'Instruments', pages }],
+            sections: [{ title: 'Pages', pages }, { title: 'Instruments', pages: instrumentsPages }],
         }));
     });
 
@@ -128,13 +149,13 @@ function createDiscovery(ctx) {
         ]));
     });
 
-    // The pages a person browses: the front page, every company and currency, the filings, source freshness. Their
-    // lastmod is the newest filing's (they list it); /sources has none of its own.
+    // The pages a person browses: the front page, every company and currency, the filings. Their lastmod is the
+    // newest filing's (they list it). /sources is public but noindex, so it never enters the sitemap.
     define(router, 'get', '/sitemaps/pages.xml', 'pagesSitemap', async (_req, res) => {
         const newest = (await documents.recent(1))[0];
         const lastmod = newest ? Math.max(newest.first_seen_at, newest.published_at || 0) : null;
         const decide = (path) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: abs(path), wordCount: 0 }, { policy: { minWords: 0 } });
-        xml(res, seo.sitemap(['/', '/instruments', '/filings', '/sources'].map((path) => ({ loc: abs(path), lastmod: path === '/sources' ? null : lastmod, decision: decide(path) }))).files[0]);
+        xml(res, seo.sitemap(PUBLIC_PAGES.filter((p) => p.sitemap).map((p) => ({ loc: abs(p.path), lastmod, decision: decide(p.path) }))).files[0]);
     });
 
     define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {
