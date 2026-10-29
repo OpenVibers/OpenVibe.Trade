@@ -127,6 +127,10 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(/text\/plain/.test(before.headers.get('content-type')));
         assert.ok(before.text.startsWith('# OpenVibe.Trade'));
         assert.ok(before.text.includes('not investment advice'));
+        assert.ok(before.text.length >= 500, `real content, not a stub (${before.text.length} characters)`);
+        for (const p of ['/', '/instruments', '/filings', '/sources', '/i/:symbol', '/terms', '/privacy', '/dmca']) {
+            assert.ok(before.text.includes(`https://openvibe.trade${p}`), `llms-full.txt names the public route ${p}`);
+        }
         assert.ok(!before.text.includes('https://openvibe.trade/i/ACME'), 'nothing indexable is listed yet');
         assert.ok(Buffer.byteLength(before.text) <= 512 * 1024, 'llms-full.txt stays within maxBytes');
 
@@ -183,7 +187,11 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(tenK.text.includes('Annual reports (10-K)') && /name="robots" content="noindex/.test(tenK.text), 'one form: noindex, canonical /filings');
         assert.ok((await t.get('/sitemap.xml')).text.includes('https://openvibe.trade/sitemaps/pages.xml'));
         const pages = (await t.get('/sitemaps/pages.xml')).text;
-        for (const p of ['/', '/instruments', '/filings', '/sources']) assert.ok(pages.includes(`<loc>https://openvibe.trade${p}</loc>`), p);
+        for (const p of ['/', '/instruments', '/filings']) assert.ok(pages.includes(`<loc>https://openvibe.trade${p}</loc>`), p);
+        assert.ok(!pages.includes('<loc>https://openvibe.trade/sources</loc>'), 'SEO-18: /sources is not in the sitemap');
+        const sources = await t.get('/sources');
+        assert.strictEqual(sources.status, 200);
+        assert.match(sources.headers.get('x-robots-tag') || '', /noindex/, 'SEO-18: the page stays noindex');
     });
 
     await check('the front page\'s euro rates: each currency\'s newest rate, its date and source, and the change from the same source', async () => {
