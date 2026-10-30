@@ -12,13 +12,14 @@
 const { html, raw } = require('openvibe-publishing/ssr');
 const showcase = require('openvibe-shared/showcase');
 const { when, staleBadge, grouped, clip, formLabel, filingLine, instrumentsTable } = require('./views');
+const { pickBlock, pickRules, foldBlock } = require('./short');
 
 const count = (n) => Number(n).toLocaleString('en-US');
 
 function section({ id, title, lede, more, body, note }) {
     if (!body) return '';
-    return html`<section class="tr-sec" aria-labelledby="${id}">
-<div class="tr-head"><h2 id="${id}">${title}</h2>${more ? html`<a class="tr-more" href="${more.href}">${more.label}<span aria-hidden="true"> →</span></a>` : ''}</div>
+    return html`<section class="tr-sec" aria-labelledby="${id}-h">
+<div class="tr-head"><h2 id="${id}-h">${title}</h2>${more ? html`<a class="tr-more" href="${more.href}">${more.label}<span aria-hidden="true"> →</span></a>` : ''}</div>
 ${lede ? html`<p class="tr-lede">${lede}</p>` : ''}
 ${raw(String(body))}
 ${note ? html`<p class="muted">${note}</p>` : ''}
@@ -114,6 +115,29 @@ function faqJsonLd(items) {
 }
 
 /**
+ * The home's six kinds of market information, each one a pane of the pick block. A pane with nothing to show is left
+ * out, so the chips and the rules that show them match the page.
+ */
+function homePanes(d, urls) {
+    const s = d.stats;
+    return [
+        { id: 'briefs', label: 'AI briefs', html: section({ id: 'briefs', title: 'Latest AI briefs', lede: 'Short summaries of a company\'s latest numbers and filings, each point linked to the figure it rests on.', body: briefCards(d.briefs, urls), note: 'Written by OpenVibe.AI from SEC filings and the numbers in them, not reviewed by a person. Informational only; not investment advice.' }) },
+        { id: 'rates', label: 'Euro rates', html: section({ id: 'rates', title: 'Euro reference rates', lede: 'What one euro was worth in each currency on the latest rate date, as each source stated it. A change compares the two newest rates of the same source.', body: ratesTable(d.rates, urls) }) },
+        { id: 'reports', label: 'Reports', html: section({ id: 'reports', title: 'New annual and quarterly reports', lede: 'The latest 10-K and 10-Q filings, with the period figures read from them on each company\'s page.', more: { href: '/filings?form=10-Q', label: 'All quarterly reports' }, body: reportCards(d.reports, urls) }) },
+        { id: 'forms', label: 'By form', html: section({ id: 'forms', title: 'Filed in the last 7 days', lede: 'Filings by form type, the most first.', more: { href: '/filings', label: 'Every filing' }, body: formChips(d.forms) }) },
+        { id: 'recent', label: 'Filings', html: section({ id: 'recent', title: 'Newest filings', lede: 'As they arrive from the SEC, each with when it was published and when it was retrieved.', more: { href: '/filings', label: 'More filings' }, body: d.recent.length ? html`<ul class="docs">${d.recent.map((r) => filingLine(r, urls))}</ul>` : '' }) },
+        { id: 'movers', label: 'Companies', html: section({ id: 'movers', title: 'Companies with something new', lede: 'The newest filing or figure first.', more: { href: '/instruments', label: `All ${count(s.instruments)} companies and currencies` }, body: d.movers.instruments.length ? instrumentsTable({ instruments: d.movers.instruments, latest: d.movers.latest, latestDocs: d.movers.latestDocs, urls }) : '' }) },
+    ].filter((p) => p.html);
+}
+
+/** The rules that show the picked pane of the home's pick block: one per pane, written for this page. */
+function paneRules(d, urls) {
+    const ids = homePanes(d, urls).map((p) => p.id);
+    if (!ids.length) return '';
+    return `@supports selector(:has(*)){@media (max-width:640px){${pickRules('data', ids)}}}`;
+}
+
+/**
  * d: { stats: { companies, currencies, filings, filingsDay, filers, figures, figureCompanies, briefs },
  *      briefs, rates: [{ symbol, name, latest, previous, dto }], reports, recent: [{ document, instrument }],
  *      forms: [{ form_type, count }], movers: { instruments, latest, latestDocs }, sync, faq }
@@ -137,12 +161,12 @@ function homePage(d, urls) {
 
     return html`${hero}
 <p class="muted">What this site is not: there is no order entry, no brokerage, no custody of money or assets, no marketplace and no personal recommendation here.</p>
-${section({ id: 'briefs', title: 'Latest AI briefs', lede: 'Short summaries of a company\'s latest numbers and filings, each point linked to the figure it rests on.', body: briefCards(d.briefs, urls), note: 'Written by OpenVibe.AI from SEC filings and the numbers in them, not reviewed by a person. Informational only; not investment advice.' })}
-${section({ id: 'rates', title: 'Euro reference rates', lede: 'What one euro was worth in each currency on the latest rate date, as each source stated it. A change compares the two newest rates of the same source.', body: ratesTable(d.rates, urls) })}
-${section({ id: 'reports', title: 'New annual and quarterly reports', lede: 'The latest 10-K and 10-Q filings, with the period figures read from them on each company\'s page.', more: { href: '/filings?form=10-Q', label: 'All quarterly reports' }, body: reportCards(d.reports, urls) })}
-${section({ id: 'forms', title: 'Filed in the last 7 days', lede: 'Filings by form type, the most first.', more: { href: '/filings', label: 'Every filing' }, body: formChips(d.forms) })}
-${section({ id: 'recent', title: 'Newest filings', lede: 'As they arrive from the SEC, each with when it was published and when it was retrieved.', more: { href: '/filings', label: 'More filings' }, body: d.recent.length ? html`<ul class="docs">${d.recent.map((r) => filingLine(r, urls))}</ul>` : '' })}
-${section({ id: 'movers', title: 'Companies with something new', lede: 'The newest filing or figure first.', more: { href: '/instruments', label: `All ${count(s.instruments)} companies and currencies` }, body: d.movers.instruments.length ? instrumentsTable({ instruments: d.movers.instruments, latest: d.movers.latest, latestDocs: d.movers.latestDocs, urls }) : '' })}
+${raw(pickBlock({
+        key: 'data',
+        label: 'The market, by kind',
+        head: 'The market, by kind',
+        panes: homePanes(d, urls),
+    }))}
 <div class="tr-sec"><details class="tr-fold"><summary>What is here<span>companies, numbers, briefs, filings, alerts</span></summary>${raw(showcase.features({
         items: [
             { icon: 'ov:search', title: 'Find a company', text: 'By ticker, SEC CIK or company name. One match takes you straight there; several are listed, never guessed between.', href: '/instruments' },
@@ -153,9 +177,12 @@ ${section({ id: 'movers', title: 'Companies with something new', lede: 'The newe
             { icon: 'ov:check', title: 'Source freshness', text: 'Every source with when it last answered; a source that falls behind marks its values stale.', href: '/sources' },
         ],
     }))}</details></div>
-<section class="tr-sec" aria-labelledby="faq"><div class="tr-head"><h2 id="faq">Questions and answers</h2></div>
-<div class="tr-faq">${d.faq.map((x) => html`<details><summary>${x.q}</summary><p>${x.a}</p></details>`)}</div></section>
+${raw(foldBlock({
+        id: 'faq',
+        head: '<h2 id="faq-h">Questions and answers</h2>',
+        html: html`<div class="tr-faq">${d.faq.map((x) => html`<details><summary>${x.q}</summary><p>${x.a}</p></details>`)}</div>`,
+    }))}
 <p>Feeds of recent documents: <a href="/feed.xml">RSS</a> · <a href="/atom.xml">Atom</a> · <a href="/feed.json">JSON Feed</a>. Source freshness: <a href="/sources">sources</a>.${d.sync && d.sync.last_ok_at ? html` Last synchronised with OpenVibe.Sources ${when(d.sync.last_ok_at)}.` : ''}</p>`;
 }
 
-module.exports = { homePage, faqItems, faqJsonLd, change };
+module.exports = { homePage, homePanes, paneRules, faqItems, faqJsonLd, change };

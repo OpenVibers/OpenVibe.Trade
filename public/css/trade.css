@@ -14,7 +14,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
    which has its own padding, that put the hero and "How it works" 24px right of everything after them. */
 .page > .sc-hero, .page > .sc-sec, .page > .sc-cta { padding-left: 0; padding-right: 0; }
 /* The front page's own sections read as the showcase's do: same heading face and size as "What is here". */
-.sc-sec ~ h2, .sc-sec ~ section > h2 { font-family: var(--ov-font, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif); font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.02em; line-height: 1.2; margin-top: 44px; }
+.sc-sec ~ h2, .sc-sec ~ section > h2 { font-family: var(--ov-font, 'Inter', system-ui, sans-serif); font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.02em; line-height: 1.2; margin-top: 44px; }
 h1 { font-size: 1.9rem; line-height: 1.2; margin: 1rem 0 .5rem; }
 h1 .name { font-weight: 400; color: var(--text-secondary, #96a7c2); font-size: 1.3rem; }
 h2 { font-size: 1.3rem; margin: 1.8rem 0 .5rem; }
@@ -121,7 +121,7 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
   .tr-sec .tr-rates > li { flex: 0 0 46%; scroll-snap-align: start; }
   .tr-stats > li { flex: 0 0 auto; width: 132px; scroll-snap-align: start; }
   .tr-sec .tr-chips > li:nth-child(n+9), .tr-sec > .docs > li:nth-child(n+6) { display: none; }
-  .tr-sec[aria-labelledby="movers"] tbody tr:nth-child(n+9) { display: none; }
+  .tr-sec[aria-labelledby="movers-h"] tbody tr:nth-child(n+9) { display: none; }
   .tr-fold > summary span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .tr-stats a { transition: none; } }
@@ -143,3 +143,44 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
   .tr-card-top a::after { content: ''; position: absolute; left: 0; right: 0; top: -9px; bottom: -9px; }
   table.data a { display: inline-block; min-height: 44px; }
 }
+
+/* Pick (the owner's short-pages rule, 2026-10-30): on a phone the front page's six kinds of market information are
+   one at a time, picked with a row of chips. Radio inputs and :has(), no script: the chips and the one-pane rule live
+   under 640 px and only where :has() is understood, so a wider screen, or an older browser, shows every pane and no
+   chips. Every pane stays in the page for crawlers. */
+.pick-head { display: none; }
+.pick-row { display: none; }
+@supports selector(:has(*)) { @media (max-width: 640px) {
+  .pick-bar { margin-top: 30px; }
+  .pick-head { display: block; }
+  .pick-head h2 { margin: 0 0 4px; font: 700 clamp(20px, 2.4vw, 28px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); letter-spacing: -.02em; }
+  .pick-row { display: flex; gap: 8px; overflow-x: auto; margin: 10px -16px 0; padding: 2px 16px 4px; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .pick-row::-webkit-scrollbar { display: none; }
+  .pick-row input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+  .pick-row label { display: inline-flex; align-items: center; flex: none; min-height: 44px; padding: 0 15px; border-radius: 999px; border: 1px solid var(--border, #1f2d47); color: var(--text-secondary, #96a7c2); font-size: .9rem; font-weight: 650; white-space: nowrap; cursor: pointer; }
+  .pick-row input:checked + label { color: var(--text-primary, #e6edf7); border-color: var(--accent, #3b82f6); background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent); }
+  .pick-row input:focus-visible + label { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+  .pick .pick-pane { display: none; }
+  /* A link that points at a pane (the hero's "AI briefs", the numbers beside it) opens that pane on a phone too. */
+  .pick .pick-pane:target { display: block !important; }
+  .pick:has(.pick-pane:target) .pick-pane:not(:target) { display: none !important; }
+  /* The chip names the pane, so the pane's own heading gives way to it; the link to more stays. */
+  .pick .pick-pane .tr-head h2 { display: none; }
+  .pick .pick-pane .tr-head { justify-content: flex-end; }
+} }
+
+/* The fold (the owner's short-pages rule): closed on a phone, and where there is room it looks like the section it
+   replaces: a heading and its content, with no card around it. */
+.tr-fold-block { margin-top: 32px; }
+.tr-fold-block > summary h2 { margin: 0; font: 700 clamp(19px, 2.2vw, 26px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); }
+.tr-fold-block .tr-faq { margin-top: 12px; }
+/* The shipped list carries its own title; the fold's summary already names it. */
+.tr-fold-block .ov-shipped-home h3 { display: none; }
+@media (min-width: 641px) {
+  .tr-fold-block { border: 0; background: none; border-radius: 0; margin-top: 56px; padding: 0; }
+  .tr-fold-block > summary { display: block; min-height: 0; padding: 0; }
+  .tr-fold-block > summary h2 { margin: 0 0 6px; font: 700 clamp(22px, 2.6vw, 30px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); }
+  .tr-fold-block > summary span { display: none; }
+  .tr-fold-block .tr-faq { margin-top: 12px; }
+}
+@media (max-width: 640px) { .tr-fold-block { margin-top: 24px; } .tr-fold-block > summary h2 { font-size: 1.05rem; } }

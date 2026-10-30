@@ -17,6 +17,7 @@ const path = require('path');
 const layout = require('openvibe-publishing/layout');
 const { escapeHtml: esc } = require('openvibe-publishing/ssr');
 const frame = require('openvibe-shared/frame');
+const { foldBlock } = require('./short');
 
 const NETWORK_URL = 'https://openvibe.network';
 const SITE_NAME = 'OpenVibe.Trade';
@@ -89,7 +90,8 @@ function renderPage(o) {
         description: o.description || `Instruments, timestamped observations and filings with their sources. ${DISCLAIMER}`,
         canonical: o.canonical,
         // The head names the page's own Markdown twin (openvibe-shared/agent-layer).
-        head: agentHeadTags(o),
+        // The rules that show the picked pane of a pick block are written for the page, because there is one per pane.
+        head: [agentHeadTags(o), ...(o.inlineStyles || []).map((css) => `<style>${css}</style>`)].filter(Boolean).join('\n'),
         decision: o.decision,
         type: o.type || 'website',
         image: o.image,
@@ -112,7 +114,12 @@ function renderPage(o) {
         header: `<p class="disclaimer" role="note"><strong>${esc(DISCLAIMER)}</strong> Every number shows when it was observed and where it came from; stale sources are labelled as stale.</p>`,
         body: o.body,
         shipped: [
-            o.path === '/' ? frame.shipped({ service: 'trade', title: `Recently shipped on ${SITE_NAME}` }) : '',
+            // The shipped list is a part a reader rarely needs: a fold on a phone, the section it was where there is room.
+            o.path === '/' ? foldBlock({
+                id: 'shipped',
+                head: `<h2 id="h-shipped">Recently shipped on ${SITE_NAME}</h2>`,
+                html: frame.shipped({ service: 'trade', title: `Recently shipped on ${SITE_NAME}` }),
+            }) : '',
             `<p class="disclaimer disclaimer-foot" role="note">${esc(DISCLAIMER)} OpenVibe.Trade holds no money or assets, takes no orders and gives no personal recommendations.</p>`,
         ].filter(Boolean).join('\n'),
         bodyClass: o.bodyClass,
