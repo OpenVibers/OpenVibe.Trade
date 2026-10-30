@@ -70,23 +70,26 @@ function createPages(ctx) {
         ]);
         const rates = await Promise.all(rateRows.map(async (r) => ({ ...r, dto: await observations.dto(r.latest, { now }) })));
         const faq = home.faqItems();
+        const data = {
+            stats: {
+                companies: (kinds.equity || 0) + (kinds.fund || 0), currencies: kinds.currency || 0, instruments: Object.values(kinds).reduce((a, b) => a + b, 0),
+                filings: docStats.total, filingsDay: docStats.day, figureCompanies: obsStats.companies, briefs: briefStats.total,
+            },
+            briefs, rates, reports: await withInstruments(reportDocs), forms, recent: await withInstruments(recentDocs),
+            movers: { instruments: movers.instruments, ...await headlines(movers.instruments, now) }, sync: await sync.state(), faq,
+        };
         common.page(req, res, {
             title: 'SEC filings, company figures, AI briefs', canonical: urls.abs('/'), decision: listing('/'),
             description: 'SEC filings as they arrive, the figures inside them, euro reference rates and AI briefs that cite every number, for about 8,000 US companies. Information only.',
             // The home page carries the site's ai-summary meta and WebPage JSON-LD (v1.3.0 forwards it).
             summary: SITE_SUMMARY, styles: [showcase.STYLESHEET], bodyClass: 'home', feeds: FEEDS,
+            // The rule that shows the picked pane of the home's pick block: one per pane, written for this page.
+            inlineStyles: [home.paneRules(data, urls)],
             jsonLd: [
                 seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en', potentialAction: { '@type': 'SearchAction', target: `${urls.abs('/resolve')}?q={q}`, 'query-input': 'required name=q' } }),
                 home.faqJsonLd(faq),
             ],
-            body: home.homePage({
-                stats: {
-                    companies: (kinds.equity || 0) + (kinds.fund || 0), currencies: kinds.currency || 0, instruments: Object.values(kinds).reduce((a, b) => a + b, 0),
-                    filings: docStats.total, filingsDay: docStats.day, figureCompanies: obsStats.companies, briefs: briefStats.total,
-                },
-                briefs, rates, reports: await withInstruments(reportDocs), forms, recent: await withInstruments(recentDocs),
-                movers: { instruments: movers.instruments, ...await headlines(movers.instruments, now) }, sync: await sync.state(), faq,
-            }, urls),
+            body: home.homePage(data, urls),
         });
     });
 
