@@ -132,3 +132,14 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
 .tr-rate { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border, #1f2d47); background: var(--bg-card, #131c2e); min-width: 0; }
 .tr-rate p { margin: 0; overflow-wrap: anywhere; }
 .tr-rate-value data { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Touch targets on phones (fleet audit, 2026-10-29): touch pointers only. */
+@media (pointer: coarse) {
+  .tr-chips a { min-height: 44px; }
+  .tr-more-rates summary { min-height: 44px; }
+  .tr-more { position: relative; }
+  .tr-more::after { content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
+  .tr-card-top a { position: relative; display: inline-block; }
+  .tr-card-top a::after { content: ''; position: absolute; left: 0; right: 0; top: -9px; bottom: -9px; }
+  table.data a { display: inline-block; min-height: 44px; }
+}
