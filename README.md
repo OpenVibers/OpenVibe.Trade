@@ -278,7 +278,7 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
   `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional: without `VALKEY_URL` they count per process).
 - **Packages** (pinned by release tarball): `openvibe-contracts` v0.97.0, `openvibe-publishing`
   v1.3.0 (revisions, authorship, seo, index-hooks, ssr, ingest, publication), `openvibe-shared` v4.48.0 (Frame, app icon,
-  footer, legal, release, metrics, ready), `openvibe-sdk` v0.35.0 (events outbox and inbox, webhook
+  footer, legal, release, metrics, ready), `openvibe-sdk` v0.74.0 (events outbox and inbox, webhook
   signatures v2, service tokens, per-actor limits, service kit lifecycle).
 - **OpenVibe.Network:** SSO (OAuth client `trade`, redirect `https://openvibe.trade/auth/callback`),
   JWKS, client-credentials tokens.
@@ -457,7 +457,7 @@ Part of the [OpenVibe network](https://openvibe.network). Built in the open by [
 
 <!-- versions:start -->
 - openvibe-contracts: v0.222.0
-- openvibe-sdk: v0.73.0
+- openvibe-sdk: v0.74.0
 - openvibe-shared: v4.48.0
 - openvibe-publishing: v1.3.0
 <!-- versions:end -->
