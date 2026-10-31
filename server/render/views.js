@@ -20,6 +20,7 @@ function grouped(value) {
  */
 const { html, raw, breadcrumbsHtml, paginationHtml } = require('openvibe-publishing/ssr');
 const showcase = require('openvibe-shared/showcase');
+const kit = require('openvibe-shared/kit');
 
 const ISO = (v) => (v == null ? null : (typeof v === 'number' ? new Date(v).toISOString() : String(v)));
 
@@ -38,6 +39,75 @@ function staleBadge(f) {
         return html`<span class="badge stale">stale</span>${f.stale_since ? html` since ${when(f.stale_since)}` : html` <span class="muted">(${f.reason === 'source_unknown' ? 'freshness unknown' : 'never fetched successfully'})</span>`}`;
     }
     return html`<span class="badge fresh">current</span>`;
+}
+
+/** A metric that states a price (or a rate) rather than a filed period figure. */
+const PRICE_METRIC_RE = /^(?:price|quote|close|rate)(?:\.|$)/i;
+const isPriceMetric = (metric) => PRICE_METRIC_RE.test(String(metric || ''));
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dateOf = (v) => {
+    const s = ISO(v);
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+};
+/** A short time for a row: "22 Sep 10:00 UTC"; the full ISO stays in the <time datetime>. */
+function shortWhen(v) {
+    const d = v instanceof Date ? v : dateOf(v);
+    if (!d) return 'time not stated';
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${hh}:${mm} UTC`;
+}
+/** A full time for the folded details: "22 Sep 2026 10:00 UTC". */
+function fullWhen(v) {
+    const d = v instanceof Date ? v : dateOf(v);
+    if (!d) return 'time not stated';
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${hh}:${mm} UTC`;
+}
+
+/** A duration in seconds as words ("1 hour", "2 days"), for a max age the database holds. */
+function durationWords(sec) {
+    const n = Number(sec);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    for (const [size, label] of [[86400, 'day'], [3600, 'hour'], [60, 'minute'], [1, 'second']]) {
+        if (n % size === 0) { const v = n / size; return `${v} ${label}${v === 1 ? '' : 's'}`; }
+    }
+    return `${n} seconds`;
+}
+
+const STALE_REASON = {
+    value_older_than_max_age: 'The value is older than its maximum age.',
+    source_stale: 'The source is behind its own freshness window.',
+    source_unknown: 'The source has not reported its freshness.',
+};
+
+/** The pill's title: the short reason, kept even when the pill only says "stale since …". */
+function freshnessTitle(o) {
+    const f = o.freshness || {};
+    const age = durationWords(o.max_age_sec);
+    if (!f.stale) return "Current: inside the source window and the value's maximum age.";
+    if (f.reason === 'value_older_than_max_age' && age) return `The value is older than its ${age} maximum age.`;
+    return STALE_REASON[f.reason] || 'The source is stale.';
+}
+
+/** The folded explanation of the verdict: the date it went stale, why, and the value's own max age. */
+function freshnessExplanation(o) {
+    const f = o.freshness || {};
+    const age = durationWords(o.max_age_sec);
+    if (!f.stale) {
+        return age
+            ? `Current: inside its ${age} maximum age and the source freshness window.`
+            : 'Current: no maximum age is set for this value, so the source freshness window decides.';
+    }
+    const since = f.stale_since ? ` since ${fullWhen(f.stale_since)}` : '';
+    if (f.reason === 'value_older_than_max_age' && age) return `Stale${since}: the value is older than its ${age} maximum age.`;
+    if (f.reason === 'source_stale') return `Stale${since}: the source is behind its own freshness window.`;
+    if (f.reason === 'source_unknown') return 'Stale: the source has not reported its freshness.';
+    return `Stale${since}: the source is stale.`;
 }
 
 function csrfField(token) { return html`<input type="hidden" name="_csrf" value="${token}">`; }
@@ -159,37 +229,55 @@ ${result.status === 'not_found' ? html`<p class="empty">No instrument matches �
 
 // ── Instrument ───────────────────────────────────────────────────────────────
 
-function observationsTable(instrument, observations) {
+function observationsList(instrument, observations, sourceNames = new Map()) {
     if (!observations.length) {
         return html`<p class="empty" id="no-observations">No observations have been recorded for ${instrument.symbol}, so no number is shown.</p>`;
     }
     const ordered = observations.slice().sort((a, b) => (metricOrder(a.metric) < metricOrder(b.metric) ? -1 : metricOrder(a.metric) > metricOrder(b.metric) ? 1 : 0));
-    const rows = ordered.map((o) => html`<tr id="${o.id}" class="${o.freshness.stale ? 'is-stale' : ''}">
-        <th scope="row">${labelOf(o.metric)}${o.period ? html` <span class="muted">(${o.period})</span>` : ''}</th>
-        <td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit}${o.currency && o.currency !== o.unit ? html` <span class="muted">${o.currency}</span>` : ''}</td>
-        <td>${when(o.observed_at)}</td>
-        <td>${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.key}</a>` : o.source.key}</td>
-        <td>${when(o.retrieved_at)}</td>
-        <td>${staleBadge(o.freshness)}</td>
-    </tr>`);
-    return html`<table tabindex="0" class="data observations">
-<caption>Latest observation per metric. Values are exactly as the source stated them.</caption>
-<thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">Observed</th><th scope="col">Source</th><th scope="col">Retrieved</th><th scope="col">Freshness</th></tr></thead>
-<tbody>${rows}</tbody></table>`;
+    const items = ordered.map((o) => {
+        const sourceName = sourceNames.get(o.source.key) || o.source.key;
+        const price = isPriceMetric(o.metric);
+        const row = html`<li id="${o.id}" class="obs-item${o.freshness.stale ? ' is-stale' : ''}">
+<div class="obs-name">${labelOf(o.metric)}${o.period ? html` <span class="obs-period">(${o.period})</span>` : ''}</div>
+<div class="obs-value-row"><div class="obs-value"><data value="${o.value}">${grouped(o.value)}</data> <small>${o.unit}${o.currency && o.currency !== o.unit ? ` ${o.currency}` : ''}</small></div>
+<span class="ovk-badge ovk-badge--${o.freshness.stale ? 'warn' : 'ok'}" title="${freshnessTitle(o)}">${o.freshness.stale ? `stale${o.freshness.stale_since ? html` since ${shortWhen(o.freshness.stale_since)}` : ''}` : 'current'}</span></div>
+${price ? html`<div class="obs-note">Not a live quote</div>` : ''}
+<p class="obs-line">Observed <time datetime="${ISO(o.observed_at)}">${shortWhen(o.observed_at)}</time> · ${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${sourceName} ↗</a>` : html`${sourceName}`}</p>
+<details class="obs-details"><summary>Source details</summary>
+<dl class="obs-detail-grid">
+<dt>Retrieved</dt><dd><time datetime="${ISO(o.retrieved_at)}">${fullWhen(o.retrieved_at)}</time></dd>
+<dt>Source reference</dt><dd><code class="obs-ref">${o.source.ref}</code></dd>
+<dt>Source URL</dt><dd>${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.url}</a>` : html`<span class="muted">No source URL recorded.</span>`}</dd>
+<dt>Freshness</dt><dd>${freshnessExplanation(o)}</dd>
+${price ? html`<dt>Quote</dt><dd>Source-stated price, not a live quote. Trade holds no live market feed and records no source delay.</dd>` : ''}
+</dl></details>
+</li>`;
+        return row;
+    });
+    return html`<ol class="obs-list">${items}</ol>`;
 }
 
 function sourcesTable(list, { caption }) {
     if (!list.length) return html`<p class="empty">No sources have reported yet.</p>`;
-    const rows = list.map((s) => html`<tr id="source-${s.key}">
-        <th scope="row">${s.name || s.key}${s.name && s.name !== s.key ? html` <span class="muted">${s.key}</span>` : ''}</th>
-        <td>${s.status === 'fresh' ? html`<span class="badge fresh">current</span>` : s.status === 'unknown' ? html`<span class="badge stale">freshness unknown</span>` : html`<span class="badge stale">stale</span>${s.stale_since ? html` since ${when(s.stale_since)}` : ''}`}</td>
-        <td>${when(s.last_success_at, 'never')}</td>
-        <td>${s.stale_after_sec ? `${Math.round(s.stale_after_sec / 60)} min` : ''}</td>
-        <td>${s.upstream_status || html`<span class="muted">not reported</span>`}</td>
-    </tr>`);
-    return html`<table tabindex="0" class="data sources"><caption>${caption}</caption>
-<thead><tr><th scope="col">Source</th><th scope="col">Freshness</th><th scope="col">Last successful fetch</th><th scope="col">Stale after</th><th scope="col">Sources reports</th></tr></thead>
-<tbody>${rows}</tbody></table>`;
+    const rows = list.map((s) => ({
+        source: html`<span id="source-${s.key}">${s.name || s.key}${s.name && s.name !== s.key ? html` <span class="muted">${s.key}</span>` : ''}</span>`,
+        freshness: s.status === 'fresh' ? html`<span class="badge fresh">current</span>` : s.status === 'unknown' ? html`<span class="badge stale">freshness unknown</span>` : html`<span class="badge stale">stale</span>${s.stale_since ? html` since ${when(s.stale_since)}` : ''}`,
+        last: when(s.last_success_at, 'never'),
+        window: s.stale_after_sec ? `${Math.round(s.stale_after_sec / 60)} min` : html`<span class="muted">not stated</span>`,
+        upstream: s.upstream_status || html`<span class="muted">not reported</span>`,
+    }));
+    return html`${raw(kit.table({
+        id: 'sources',
+        columns: [
+            { key: 'source', label: 'Source', primary: true, html: true },
+            { key: 'freshness', label: 'Freshness', html: true },
+            { key: 'last', label: 'Last successful fetch', html: true },
+            { key: 'window', label: 'Stale after', html: true },
+            { key: 'upstream', label: 'Sources reports', html: true },
+        ],
+        rows,
+        caption,
+    }))}`;
 }
 
 function citeList(cites, instrument, urls) {
@@ -241,34 +329,45 @@ function documentsSection(instrument, docs, { pager, urls }) {
 ${raw(paginationHtml(pager))}${feeds}</section>`;
 }
 
-function personalTools(instrument, { viewer, watchlists, csrf, loginHref }) {
+function personalTools(instrument, { viewer, watchlists, csrf, loginHref, limits }) {
     if (!viewer || viewer.kind !== 'user' || !viewer.subject) {
         return html`<section class="personal" aria-labelledby="personal-h"><h2 id="personal-h">Watch this instrument</h2>
-<p><a href="${loginHref}">Sign in</a> to add ${instrument.symbol} to a private watchlist or to get an alert when a new document or observation arrives.</p></section>`;
+<p><a href="${loginHref}">Sign in</a> to add ${instrument.symbol} to a private watchlist or to get an alert when a new document or observation arrives. Watchlists and alerts are free, always: no paid tier, no card, no trial.</p></section>`;
     }
+    const first = watchlists[0];
+    const oneWatch = kit.action({ action: '/watchlists/watch', hidden: { _csrf: csrf, symbol: instrument.symbol }, label: first ? 'Add to watchlist' : `Watch ${instrument.symbol}`, icon: 'star', kind: 'primary' });
+    const oneAlert = kit.action({ action: '/alerts', hidden: { _csrf: csrf, symbol: instrument.symbol, kind: 'new_document' }, label: 'Alert me to new filings', icon: 'bell', kind: 'quiet' });
     const options = watchlists.map((w) => html`<option value="${w.id}">${w.name}</option>`);
+    const choose = watchlists.length > 1 ? html`<form method="post" action="/watchlists/item" class="inline-form">${csrfField(csrf)}
+  <input type="hidden" name="symbol" value="${instrument.symbol}">
+  <label for="wl">Add to another watchlist</label><select id="wl" name="watchlist_id">${options}</select>
+  <button type="submit">Add</button></form>` : '';
+    const more = kit.fold({
+        title: 'More watchlist and alert options',
+        body: html`${choose}
+<form method="post" action="/alerts" class="inline-form">${csrfField(csrf)}
+  <input type="hidden" name="symbol" value="${instrument.symbol}"><input type="hidden" name="kind" value="filing_type">
+  <label>Alert me to a kind of filing <input name="form_types" placeholder="10-K, 10-Q, 8-K" maxlength="120" required></label>
+  <button type="submit">Create filing alert</button></form>
+<form method="post" action="/alerts" class="inline-form">${csrfField(csrf)}
+  <input type="hidden" name="symbol" value="${instrument.symbol}"><input type="hidden" name="kind" value="threshold">
+  <label>Alert me when a number crosses a line</label>
+  <label>Observation <input name="metric" placeholder="metric, e.g. price.close" maxlength="80" required></label>
+  <label>Operator <select name="operator"><option value="above">above</option><option value="below">below</option></select>
+  <input name="threshold" placeholder="value" maxlength="40" required> <input name="unit" placeholder="unit, e.g. USD" maxlength="20" required></label>
+  <button type="submit">Create observation alert</button></form>
+${limits ? html`<p class="muted">An account can keep up to ${limits.watchlistsPerSubject} watchlists of ${limits.itemsPerWatchlist} instruments, and up to ${limits.alertRulesPerSubject} alert rules. These limits are this site's configuration, not a paid tier.</p>` : ''}`,
+    });
     return html`<section class="personal" aria-labelledby="personal-h"><h2 id="personal-h">Watch this instrument <span class="badge">private</span></h2>
-${watchlists.length ? html`<form method="post" action="/watchlists/item" class="inline-form">${csrfField(csrf)}
-  <input type="hidden" name="symbol" value="${instrument.symbol}">
-  <label for="wl">Add to watchlist</label><select id="wl" name="watchlist_id">${options}</select>
-  <button type="submit">Add</button></form>` : html`<p><a href="/watchlists">Create a watchlist</a> first.</p>`}
-<form method="post" action="/alerts" class="alert-form">${csrfField(csrf)}
-  <input type="hidden" name="symbol" value="${instrument.symbol}">
-  <fieldset><legend>New alert for ${instrument.symbol}</legend>
-  <label><input type="radio" name="kind" value="new_document" checked> Any new document</label>
-  <label><input type="radio" name="kind" value="filing_type"> New filing of type(s) <input name="form_types" placeholder="10-K, 10-Q, 8-K" maxlength="120"></label>
-  <label><input type="radio" name="kind" value="threshold"> Observation
-    <input name="metric" placeholder="metric, e.g. price.close" maxlength="80">
-    <select name="operator"><option value="above">above</option><option value="below">below</option></select>
-    <input name="threshold" placeholder="value" maxlength="40"> <input name="unit" placeholder="unit, e.g. USD" maxlength="20"></label>
-  </fieldset>
-  <button type="submit">Create alert</button>
-  <p class="muted">Alerts are delivered as OpenVibe notifications, once per triggering observation or document. No email is sent.</p>
-</form></section>`;
+<p class="muted">One tap: keep ${instrument.symbol} on your watchlist, or get a notification for every new filing.${first ? html` The watchlist button adds it to “${first.name}”.` : html` The first tap starts a private watchlist called “Watching”.`}</p>
+<p class="personal-actions">${raw(oneWatch)} ${raw(oneAlert)}</p>
+${raw(more)}
+<p class="muted">Alerts are delivered as OpenVibe notifications, once per triggering observation or document. No email is sent.</p>
+</section>`;
 }
 
 /** The AI brief: labelled, its points linked to the rows they cite, and how to get one when there is none. */
-function briefSection(instrument, d) {
+function briefSection(instrument, d, { hasDocuments = false } = {}) {
     const b = d.brief;
     const anchor = (c) => `#${c.id}`;
     const ask = d.briefs && d.briefs.canAsk ? html`<form method="post" action="/i/${encodeURIComponent(instrument.symbol)}/brief" class="inline-form">
@@ -279,11 +378,12 @@ function briefSection(instrument, d) {
         return html`<section aria-labelledby="ai-brief-h" id="ai-brief"><h2 id="ai-brief-h">AI brief</h2>
 <p>OpenVibe.AI can write a short brief on ${instrument.symbol} from the SEC numbers and filings on this page, every point linked to the figure it rests on. It takes a few seconds.</p>${ask}</section>`;
     }
-    return html`<section aria-labelledby="ai-brief-h" id="ai-brief" class="ai-brief"><h2 id="ai-brief-h">AI brief <span class="badge">AI-written, not reviewed by a person</span></h2>
+    return html`<section aria-labelledby="ai-brief-h" id="ai-brief" class="ai-brief"><h2 id="ai-brief-h">AI brief <span class="badge">OpenVibe.AI desk — AI-written, not reviewed by a person</span></h2>
 ${b.summary ? html`<p>${b.summary}</p>` : ''}
 ${b.points.length ? html`<ul>${b.points.map((p) => html`<li>${p.text} ${p.cites.map((c, n) => html`<a class="cite" href="${anchor(c)}" title="${c.kind === 'document' ? 'The filing this rests on' : 'The figure this rests on'}">[${n + 1}]</a>`)}</li>`)}</ul>` : ''}
 <p class="muted">${b.disclaimer} Written ${when(b.created_at)}${b.as_of ? html` from figures and filings up to ${when(b.as_of)}` : ''}${b.model ? html` (${b.model})` : ''}.</p>
 ${b.gaps.length ? html`<details><summary>What the sources did not support</summary><ul>${b.gaps.map((g) => html`<li>${g}</li>`)}</ul></details>` : ''}
+${hasDocuments ? html`<p class="muted">It rests on the <a href="#docs-h">filings on this page</a> and the figures above; each point links to the row it cites.</p>` : ''}
 ${ask}</section>`;
 }
 
@@ -296,12 +396,22 @@ function instrumentPage(d) {
 <h1>${instrument.symbol} <span class="name">${instrument.name}</span></h1>
 <p class="meta">${meta}${other.length ? html` · also ${other.map((a) => a.value).join(', ')}` : ''}${instrument.status !== 'active' ? html` · <span class="badge stale">archived</span>` : ''}</p>
 ${notice(d.notice)}
-${briefSection(instrument, d)}
-<section aria-labelledby="obs-h"><h2 id="obs-h">Observations</h2>${observationsTable(instrument, observations)}</section>
+${briefSection(instrument, d, { hasDocuments: documents.length > 0 })}
+<section aria-labelledby="obs-h"><h2 id="obs-h" class="obs-h">Observations</h2>
+<p class="obs-intro">Each value as the source stated it, with when it was true and where it came from.</p>
+<p class="obs-free"><strong>Free, always.</strong> No paid tier, no card, no trial.</p>
+${observationsList(instrument, observations, new Map(sources.map((s) => [s.key, s.name || s.key])))}
+<details class="obs-how"><summary>How to read this</summary><ul>
+<li>Observed is when the source says the value was true; retrieved is when Trade fetched it.</li>
+<li>The source reference is the source's own identity for the datum; the source link and the full URL open it.</li>
+<li>A value past its maximum age is marked stale, and so is a value whose source is behind its freshness window. A stale value stays on the page with its time; it is never replaced with a guess.</li>
+<li>Trade has no live market feed. A price is the value the source stated at that time, not a live quote, and no source delay is recorded.</li>
+<li>Information only; not investment advice. There is no trading here.</li>
+</ul></details></section>
+${personalTools(instrument, d)}
 ${contextSection(instrument, context, urls, { pending: d.pending, editor: d.viewer && d.viewer.editor })}
 ${documentsSection(instrument, documents, { pager: d.pager, urls })}
 <section aria-labelledby="src-h"><h2 id="src-h">Source freshness</h2>${sourcesTable(sources, { caption: `Sources behind this page. A source is stale when its last successful fetch is older than its window.` })}</section>
-${personalTools(instrument, d)}
 <p class="muted">Machine-readable: <a href="${urls.path.instrumentJson(instrument)}">${instrument.symbol}.json</a> (the same data with every timestamp and source).</p>`;
 }
 
@@ -423,4 +533,41 @@ function errorPage({ status, title, message }) {
     return html`<h1>${title}</h1><p>${message}</p><p class="muted">Error ${status}. <a href="/">All instruments</a></p>`;
 }
 
-module.exports = { instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };
+// Observation rows: compact by design (three fit a phone's first screen), with the long provenance folded.
+const observationStyles = `
+.obs-h { margin-top: 1.2rem; }
+.obs-intro { margin: 0 0 2px; color: var(--text-secondary); font-size: .93rem; line-height: 1.35; }
+.obs-free { margin: 0 0 6px; color: var(--text-muted); font-size: .82rem; line-height: 1.3; }
+.obs-free strong { color: var(--text-primary); }
+.obs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.obs-item { padding: 7px 10px 5px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); min-width: 0; }
+.obs-name { color: var(--text-primary); font-size: .93rem; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.obs-period { color: var(--text-muted); font-weight: 400; }
+.obs-value-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 1px 10px; margin-top: 1px; }
+.obs-value { color: var(--text-primary); font-size: 1.4rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.obs-value small { color: var(--text-secondary); font-size: .72rem; font-weight: 600; }
+.obs-note { color: var(--text-muted); font-size: .67rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; line-height: 1.2; }
+.obs-line { margin: 2px 0 0; color: var(--text-muted); font-size: .8rem; line-height: 1.3; overflow-wrap: anywhere; }
+.obs-line a { color: var(--accent); text-decoration: none; }
+.obs-line a:hover, .obs-line a:focus-visible { text-decoration: underline; }
+.obs-details { margin-top: 0; }
+.obs-details > summary { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; color: var(--text-secondary); font-size: .79rem; font-weight: 600; cursor: pointer; list-style: none; }
+.obs-details > summary::-webkit-details-marker { display: none; }
+.obs-details > summary::before { content: '▸'; color: var(--text-muted); }
+.obs-details[open] > summary::before { content: '▾'; }
+.obs-detail-grid { margin: 0 0 4px; display: grid; gap: 3px; color: var(--text-secondary); font-size: .79rem; line-height: 1.4; }
+.obs-detail-grid dt { color: var(--text-muted); font-weight: 650; }
+.obs-detail-grid dd { margin: 0; overflow-wrap: anywhere; }
+.obs-detail-grid a { color: var(--accent); }
+.obs-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .76rem; overflow-wrap: anywhere; word-break: break-word; }
+.obs-how { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 2px; }
+.obs-how > summary { display: flex; align-items: center; gap: 4px; min-height: 32px; color: var(--text-secondary); font-size: .84rem; font-weight: 650; cursor: pointer; list-style: none; }
+.obs-how > summary::-webkit-details-marker { display: none; }
+.obs-how > summary::before { content: '▸'; color: var(--text-muted); }
+.obs-how[open] > summary::before { content: '▾'; }
+.obs-how ul { margin: 0 0 2px; padding-left: 20px; color: var(--text-muted); font-size: .82rem; line-height: 1.45; }
+.obs-how li { margin: 3px 0; }
+@media (min-width: 700px) { .obs-item { padding: 11px 14px 8px; } .obs-value { font-size: 1.6rem; } }
+`;
+
+module.exports = { observationStyles, instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };

@@ -118,7 +118,7 @@ const quiet = { log() {}, warn() {}, error() {} };
         assert.ok(page.text.includes(`href="#${b.points[0].cites[0].id}"`), 'the citation links to the observation row');
         for (const c of b.points.flatMap((p) => p.cites)) assert.ok(page.text.includes(`id="${c.id}"`), `cited row ${c.id} is on the page`);
         assert.strictEqual(b.points[0].cites.length, 1, 'a series is cited once, by its newest row');
-        assert.ok(page.text.includes('<data value="109417000000">109,417,000,000</data> USD'), 'the stated value, digit for digit, grouped');
+        assert.ok(page.text.includes('<data value="109417000000">109,417,000,000</data> <small>USD</small>'), 'the stated value, digit for digit, grouped');
         assert.ok(page.text.indexOf('Revenue (quarter)') < page.text.indexOf('Revenue (year)') && page.text.indexOf('Revenue (year)') < page.text.indexOf('Total assets'), 'statement order');
         assert.ok(page.text.includes('not investment advice'));
         const home = await t.get('/');

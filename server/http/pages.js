@@ -141,6 +141,7 @@ function createPages(ctx) {
     define(router, 'get', '/sources', 'showSources', async (req, res) => {
         common.page(req, res, {
             title: 'Source freshness', canonical: urls.abs('/sources'),
+            styles: ['kit.css', 'kit-data.css'],
             body: views.sourcesPage({ sources: await freshness.all(), sync: await sync.state() }),
         });
     });
@@ -183,13 +184,16 @@ function createPages(ctx) {
             decision: pageNo === 1 ? decision : { ...decision, canonical: urls.instrument(instrument) },
             jsonLd: reading.jsonLd(instrument),
             feeds: ['rss', 'atom', 'json'].map((t) => ({ type: t, href: urls.path.documentsFeed(instrument, t), title: `${instrument.symbol} documents` })),
+            // The compact observation rows, the folds and the one-tap watch/alert forms use the OpenVibe Kit's tokens.
+            styles: ['kit.css', 'kit-data.css'],
+            inlineStyles: [views.observationStyles],
             personal: Boolean(signedIn),
             body: views.instrumentPage({
                 ...data, instrument, urls, pager, notice: common.noticeOf(req),
                 context: data.context, pending: viewer.editor ? await context.pending(instrument) : [],
                 brief: await ctx.briefs.latest(instrument),
                 briefs: { canAsk: ctx.briefs.enabled && Boolean(instrument.cik || data.observations.length || total) },
-                viewer, watchlists: signedIn ? await watchlists.forOwner(viewer.subject) : [], csrf: common.csrf(req), loginHref: common.loginHref(req),
+                viewer, watchlists: signedIn ? await watchlists.forOwner(viewer.subject) : [], csrf: common.csrf(req), loginHref: common.loginHref(req), limits: config.limits,
             }),
         });
     });

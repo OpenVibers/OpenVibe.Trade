@@ -10,6 +10,7 @@
  *   POST /watchlists/rename                { watchlist_id, name }
  *   POST /watchlists/delete                { watchlist_id }
  *   POST /watchlists/item                  add { watchlist_id, symbol | q, note? }
+ *   POST /watchlists/watch                 one tap: add to the first watchlist, creating "Watching" when there is none
  *   POST /watchlists/item/remove           { watchlist_id, symbol }
  *   POST /alerts                           create { symbol, kind, … }
  *   POST /alerts/delete                    { rule_id }
@@ -18,7 +19,7 @@ const express = require('express');
 const seo = require('openvibe-publishing/seo');
 const views = require('../render/views');
 const { define } = require('./routes');
-const { asApiError } = require('./errors');
+const { ApiError, asApiError } = require('./errors');
 
 function createPrivate(ctx) {
     const { instruments, watchlists, alerts, common } = ctx;
@@ -81,6 +82,20 @@ function createPrivate(ctx) {
             const added = await watchlists.add(w, instrument, req.body.note);
             const from = req.get('referer') && /\/i\//.test(new URL(req.get('referer'), ctx.config.baseUrl).pathname) ? `/i/${encodeURIComponent(instrument.symbol)}` : '/watchlists';
             common.after(res, from, { n: added ? 'item_added' : 'item_present' });
+        } catch (err) { back(req, res, '/watchlists', err); }
+    });
+
+    // One tap on an instrument page: keep the instrument on the first watchlist, or on a new one called "Watching".
+    // The full form below it still names any other list; this route exists so the first tap needs no choice.
+    define(router, 'post', '/watchlists/watch', 'watchInstrumentForm', ...common.signedInForm, B('trade.watchlist.update'), async (req, res) => {
+        try {
+            const instrument = await instruments.bySymbol(req.body.symbol);
+            if (!instrument) throw new ApiError(404, 'instrument.not_found', 'No such instrument');
+            const subject = req.viewer.subject;
+            const lists = await watchlists.forOwner(subject);
+            const list = lists[0] || await watchlists.create(subject, { name: 'Watching' });
+            const added = await watchlists.add(list, instrument);
+            common.after(res, `/i/${encodeURIComponent(instrument.symbol)}`, { n: added ? 'item_added' : 'item_present' });
         } catch (err) { back(req, res, '/watchlists', err); }
     });
 

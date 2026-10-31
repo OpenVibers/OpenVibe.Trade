@@ -20,8 +20,8 @@ const HOUR = 3600e3;
         assert.strictEqual(json.observations[0].freshness.stale, false);
         assert.strictEqual(json.sources[0].status, 'fresh');
         const page = await t.get('/i/ACME');
-        assert.ok(page.text.includes('<span class="badge fresh">current</span>'));
-        assert.ok(!page.text.includes('badge stale'));
+        assert.ok(page.text.includes('ovk-badge--ok" title="Current'));
+        assert.ok(!page.text.includes('ovk-badge--warn'));
     });
 
     await check('after the window, the same value is shown as stale since last success + window (clock advanced, nothing else changed)', async () => {
@@ -35,9 +35,10 @@ const HOUR = 3600e3;
         assert.strictEqual(json.sources[0].status, 'stale');
         assert.strictEqual(json.sources[0].stale_since, iso(t.T0 + HOUR));
         const page = await t.get('/i/ACME');
-        assert.ok(page.text.includes('<span class="badge stale">stale</span> since <time datetime="2026-09-22T13:00:00.000Z">2026-09-22 13:00 UTC</time>'), 'explicit stale-since label');
+        assert.ok(page.text.includes('ovk-badge--warn" title="The source is behind its own freshness window.">stale since 22 Sep 13:00 UTC</span>'), 'explicit stale-since pill');
+        assert.ok(page.text.includes('<span class="badge stale">stale</span> since <time datetime="2026-09-22T13:00:00.000Z">2026-09-22 13:00 UTC</time>'), 'the source table keeps its stale-since label');
         assert.ok(page.text.includes('<data value="10.50">10.50</data>'), 'the old value stays visible with its timestamps');
-        assert.ok(/class="is-stale"/.test(page.text));
+        assert.ok(/class="obs-item is-stale"/.test(page.text));
     });
 
     await check('the transition emits trade.source.stale exactly once, and recovery emits trade.source.recovered once', async () => {
