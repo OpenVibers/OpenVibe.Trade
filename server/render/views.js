@@ -45,6 +45,30 @@ function staleBadge(f) {
 const PRICE_METRIC_RE = /^(?:price|quote|close|rate)(?:\.|$)/i;
 const isPriceMetric = (metric) => PRICE_METRIC_RE.test(String(metric || ''));
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dateOf = (v) => {
+    const s = ISO(v);
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+};
+/** A short time for a row: "22 Sep 10:00 UTC"; the full ISO stays in the <time datetime>. */
+function shortWhen(v) {
+    const d = v instanceof Date ? v : dateOf(v);
+    if (!d) return 'time not stated';
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${hh}:${mm} UTC`;
+}
+/** A full time for the folded details: "22 Sep 2026 10:00 UTC". */
+function fullWhen(v) {
+    const d = v instanceof Date ? v : dateOf(v);
+    if (!d) return 'time not stated';
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${hh}:${mm} UTC`;
+}
+
 /** A duration in seconds as words ("1 hour", "2 days"), for a max age the database holds. */
 function durationWords(sec) {
     const n = Number(sec);
@@ -61,20 +85,29 @@ const STALE_REASON = {
     source_unknown: 'The source has not reported its freshness.',
 };
 
-/** What the row says about its freshness: the verdict, why, and the value's own maximum age when it has one. */
-function freshnessDetail(o) {
+/** The pill's title: the short reason, kept even when the pill only says "stale since …". */
+function freshnessTitle(o) {
+    const f = o.freshness || {};
+    const age = durationWords(o.max_age_sec);
+    if (!f.stale) return "Current: inside the source window and the value's maximum age.";
+    if (f.reason === 'value_older_than_max_age' && age) return `The value is older than its ${age} maximum age.`;
+    return STALE_REASON[f.reason] || 'The source is stale.';
+}
+
+/** The folded explanation of the verdict: the date it went stale, why, and the value's own max age. */
+function freshnessExplanation(o) {
     const f = o.freshness || {};
     const age = durationWords(o.max_age_sec);
     if (!f.stale) {
         return age
-            ? html`Current; stale after ${age} from the observed time.`
-            : html`Current; no maximum age is set, so the source window decides.`;
+            ? `Current: inside its ${age} maximum age and the source freshness window.`
+            : 'Current: no maximum age is set for this value, so the source freshness window decides.';
     }
-    const why = f.reason === 'value_older_than_max_age' && age
-        ? html`The value is older than its ${age} maximum age.`
-        : html`${STALE_REASON[f.reason] || 'The source is stale.'}`;
-    const own = f.reason !== 'value_older_than_max_age' && age ? html` Stale after ${age} from the observed time.` : '';
-    return html`${why}${own}`;
+    const since = f.stale_since ? ` since ${fullWhen(f.stale_since)}` : '';
+    if (f.reason === 'value_older_than_max_age' && age) return `Stale${since}: the value is older than its ${age} maximum age.`;
+    if (f.reason === 'source_stale') return `Stale${since}: the source is behind its own freshness window.`;
+    if (f.reason === 'source_unknown') return 'Stale: the source has not reported its freshness.';
+    return `Stale${since}: the source is stale.`;
 }
 
 function csrfField(token) { return html`<input type="hidden" name="_csrf" value="${token}">`; }
@@ -196,40 +229,32 @@ ${result.status === 'not_found' ? html`<p class="empty">No instrument matches �
 
 // ── Instrument ───────────────────────────────────────────────────────────────
 
-function observationsTable(instrument, observations) {
+function observationsList(instrument, observations, sourceNames = new Map()) {
     if (!observations.length) {
         return html`<p class="empty" id="no-observations">No observations have been recorded for ${instrument.symbol}, so no number is shown.</p>`;
     }
     const ordered = observations.slice().sort((a, b) => (metricOrder(a.metric) < metricOrder(b.metric) ? -1 : metricOrder(a.metric) > metricOrder(b.metric) ? 1 : 0));
-    const rows = ordered.map((o) => ({
-        metric: html`<span id="${o.id}">${labelOf(o.metric)}${o.period ? html` <span class="muted">(${o.period})</span>` : ''}</span>${isPriceMetric(o.metric) ? html` ${raw(kit.badge('not a live quote', 'warn'))}` : ''}`,
-        value: html`<data value="${o.value}">${grouped(o.value)}</data> ${o.unit}${o.currency && o.currency !== o.unit ? html` <span class="muted">${o.currency}</span>` : ''}`,
-        timestamps: html`<div>Observed ${when(o.observed_at)}</div><div>Retrieved ${when(o.retrieved_at)}</div>`,
-        source: o.source.url
-            ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.key}</a>
-<div class="muted">Reference <code>${o.source.ref}</code></div>
-<div class="muted"><a href="${o.source.url}" rel="nofollow noopener">${o.source.url}</a></div>`
-            : html`${o.source.key}
-<div class="muted">Reference <code>${o.source.ref}</code></div>
-<div class="muted">No source URL recorded.</div>`,
-        freshness: html`<div class="${o.freshness.stale ? 'is-stale' : ''}">${staleBadge(o.freshness)}</div>
-<div class="muted">${freshnessDetail(o)}</div>`,
-    }));
-    // kit.table stacks each row into a card under 600 px: the metric is its title and every other cell says its label.
-    return kit.table({
-        id: 'observations',
-        columns: [
-            { key: 'metric', label: 'Metric', primary: true, html: true },
-            { key: 'value', label: 'Value', num: true, html: true },
-            { key: 'timestamps', label: 'Timestamps', html: true },
-            { key: 'source', label: 'Source and its reference', html: true },
-            { key: 'freshness', label: 'Freshness', html: true },
-        ],
-        rows,
-        caption: 'Latest observation per metric. Values are exactly as the source stated them. Observed is when the value was true; retrieved is when we fetched it; every row carries the source\'s own reference.',
-    }) + (ordered.some((o) => isPriceMetric(o.metric))
-        ? '<p class="muted">Price rows are the values the source stated at the observed time, not live quotes. Trade holds no live market feed and records no source delay.</p>'
-        : '');
+    const items = ordered.map((o) => {
+        const sourceName = sourceNames.get(o.source.key) || o.source.key;
+        const price = isPriceMetric(o.metric);
+        const row = html`<li id="${o.id}" class="obs-item${o.freshness.stale ? ' is-stale' : ''}">
+<div class="obs-name">${labelOf(o.metric)}${o.period ? html` <span class="obs-period">(${o.period})</span>` : ''}</div>
+<div class="obs-value-row"><div class="obs-value"><data value="${o.value}">${grouped(o.value)}</data> <small>${o.unit}${o.currency && o.currency !== o.unit ? ` ${o.currency}` : ''}</small></div>
+<span class="ovk-badge ovk-badge--${o.freshness.stale ? 'warn' : 'ok'}" title="${freshnessTitle(o)}">${o.freshness.stale ? `stale${o.freshness.stale_since ? html` since ${shortWhen(o.freshness.stale_since)}` : ''}` : 'current'}</span></div>
+${price ? html`<div class="obs-note">Not a live quote</div>` : ''}
+<p class="obs-line">Observed <time datetime="${ISO(o.observed_at)}">${shortWhen(o.observed_at)}</time> · ${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${sourceName} ↗</a>` : html`${sourceName}`}</p>
+<details class="obs-details"><summary>Source details</summary>
+<dl class="obs-detail-grid">
+<dt>Retrieved</dt><dd><time datetime="${ISO(o.retrieved_at)}">${fullWhen(o.retrieved_at)}</time></dd>
+<dt>Source reference</dt><dd><code class="obs-ref">${o.source.ref}</code></dd>
+<dt>Source URL</dt><dd>${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.url}</a>` : html`<span class="muted">No source URL recorded.</span>`}</dd>
+<dt>Freshness</dt><dd>${freshnessExplanation(o)}</dd>
+${price ? html`<dt>Quote</dt><dd>Source-stated price, not a live quote. Trade holds no live market feed and records no source delay.</dd>` : ''}
+</dl></details>
+</li>`;
+        return row;
+    });
+    return html`<ol class="obs-list">${items}</ol>`;
 }
 
 function sourcesTable(list, { caption }) {
@@ -372,9 +397,17 @@ function instrumentPage(d) {
 <p class="meta">${meta}${other.length ? html` · also ${other.map((a) => a.value).join(', ')}` : ''}${instrument.status !== 'active' ? html` · <span class="badge stale">archived</span>` : ''}</p>
 ${notice(d.notice)}
 ${briefSection(instrument, d, { hasDocuments: documents.length > 0 })}
-<section aria-labelledby="obs-h"><h2 id="obs-h">Observations</h2>
-${raw(kit.notice({ kind: 'ok', html: '<strong>Free, always.</strong> No paid tier, no card, no trial.' }))}
-${raw(observationsTable(instrument, observations))}</section>
+<section aria-labelledby="obs-h"><h2 id="obs-h" class="obs-h">Observations</h2>
+<p class="obs-intro">Each value as the source stated it, with when it was true and where it came from.</p>
+<p class="obs-free"><strong>Free, always.</strong> No paid tier, no card, no trial.</p>
+${observationsList(instrument, observations, new Map(sources.map((s) => [s.key, s.name || s.key])))}
+<details class="obs-how"><summary>How to read this</summary><ul>
+<li>Observed is when the source says the value was true; retrieved is when Trade fetched it.</li>
+<li>The source reference is the source's own identity for the datum; the source link and the full URL open it.</li>
+<li>A value past its maximum age is marked stale, and so is a value whose source is behind its freshness window. A stale value stays on the page with its time; it is never replaced with a guess.</li>
+<li>Trade has no live market feed. A price is the value the source stated at that time, not a live quote, and no source delay is recorded.</li>
+<li>Information only; not investment advice. There is no trading here.</li>
+</ul></details></section>
 ${personalTools(instrument, d)}
 ${contextSection(instrument, context, urls, { pending: d.pending, editor: d.viewer && d.viewer.editor })}
 ${documentsSection(instrument, documents, { pager: d.pager, urls })}
@@ -500,4 +533,41 @@ function errorPage({ status, title, message }) {
     return html`<h1>${title}</h1><p>${message}</p><p class="muted">Error ${status}. <a href="/">All instruments</a></p>`;
 }
 
-module.exports = { instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };
+// Observation rows: compact by design (three fit a phone's first screen), with the long provenance folded.
+const observationStyles = `
+.obs-h { margin-top: 1.2rem; }
+.obs-intro { margin: 0 0 2px; color: var(--text-secondary); font-size: .93rem; line-height: 1.35; }
+.obs-free { margin: 0 0 6px; color: var(--text-muted); font-size: .82rem; line-height: 1.3; }
+.obs-free strong { color: var(--text-primary); }
+.obs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.obs-item { padding: 7px 10px 5px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); min-width: 0; }
+.obs-name { color: var(--text-primary); font-size: .93rem; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.obs-period { color: var(--text-muted); font-weight: 400; }
+.obs-value-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 1px 10px; margin-top: 1px; }
+.obs-value { color: var(--text-primary); font-size: 1.4rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.obs-value small { color: var(--text-secondary); font-size: .72rem; font-weight: 600; }
+.obs-note { color: var(--text-muted); font-size: .67rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; line-height: 1.2; }
+.obs-line { margin: 2px 0 0; color: var(--text-muted); font-size: .8rem; line-height: 1.3; overflow-wrap: anywhere; }
+.obs-line a { color: var(--accent); text-decoration: none; }
+.obs-line a:hover, .obs-line a:focus-visible { text-decoration: underline; }
+.obs-details { margin-top: 0; }
+.obs-details > summary { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; color: var(--text-secondary); font-size: .79rem; font-weight: 600; cursor: pointer; list-style: none; }
+.obs-details > summary::-webkit-details-marker { display: none; }
+.obs-details > summary::before { content: '▸'; color: var(--text-muted); }
+.obs-details[open] > summary::before { content: '▾'; }
+.obs-detail-grid { margin: 0 0 4px; display: grid; gap: 3px; color: var(--text-secondary); font-size: .79rem; line-height: 1.4; }
+.obs-detail-grid dt { color: var(--text-muted); font-weight: 650; }
+.obs-detail-grid dd { margin: 0; overflow-wrap: anywhere; }
+.obs-detail-grid a { color: var(--accent); }
+.obs-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .76rem; overflow-wrap: anywhere; word-break: break-word; }
+.obs-how { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 2px; }
+.obs-how > summary { display: flex; align-items: center; gap: 4px; min-height: 32px; color: var(--text-secondary); font-size: .84rem; font-weight: 650; cursor: pointer; list-style: none; }
+.obs-how > summary::-webkit-details-marker { display: none; }
+.obs-how > summary::before { content: '▸'; color: var(--text-muted); }
+.obs-how[open] > summary::before { content: '▾'; }
+.obs-how ul { margin: 0 0 2px; padding-left: 20px; color: var(--text-muted); font-size: .82rem; line-height: 1.45; }
+.obs-how li { margin: 3px 0; }
+@media (min-width: 700px) { .obs-item { padding: 11px 14px 8px; } .obs-value { font-size: 1.6rem; } }
+`;
+
+module.exports = { observationStyles, instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };

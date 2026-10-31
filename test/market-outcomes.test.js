@@ -26,24 +26,33 @@ const HOUR = 3600e3;
         source_ref: 'ACME-2026-09-22-close', max_age_sec: 3600,
         observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0),
     });
+    await t.ctx.freshness.report('test-feed', { name: 'Test feed', status: 'healthy', lastSuccessAt: t.T0, staleAfterSec: 3600 });
 
     await check('an observation shows its observation time, retrieval time, max age and source reference', async () => {
         const r = await t.get('/i/ACME');
         assert.strictEqual(r.status, 200);
         const html = r.text;
-        assert.ok(html.includes('>Timestamps</th>'), 'the two times have a column');
+        assert.ok(html.includes('Source details'), 'the provenance is a named fold');
+        assert.ok(html.includes('<details class="obs-details"><summary>Source details</summary>'), 'the source fold is closed by default');
         assert.ok(html.includes('Observed <time'), 'the observation time has a label');
-        assert.ok(html.includes('Retrieved <time'), 'the retrieval time has a label');
+        assert.ok(html.includes('Retrieved'), 'the retrieval time is in the fold');
         assert.ok(html.includes(`datetime="${t.iso(t.T0 - 60e3)}"`), 'when the value was true');
         assert.ok(html.includes(`datetime="${t.iso(t.T0)}"`), 'when we fetched it');
+        assert.ok(html.includes('Test feed ↗'), 'the source name links out');
         assert.ok(html.includes('ACME-2026-09-22-close'), 'the source\'s own reference for the datum');
         assert.ok(html.includes('https://example.org/acme/2026-09-22'), 'the source URL, as text and as a link');
-        assert.ok(html.includes('Current; stale after 1 hour from the observed time.'), 'max_age_sec rendered, not a hand-typed number');
+        assert.ok(html.includes('Current: inside its 1 hour maximum age and the source freshness window.'), 'max_age_sec rendered, not a hand-typed number');
         assert.ok(!html.includes('The value is older than its 1 hour maximum age.'), 'current while inside the max age');
         assert.ok(html.includes(`id="${observation.id}"`), 'the row has the id the AI brief cites');
         const obsAt = html.indexOf('id="obs-h"');
         const personalAt = html.indexOf('id="personal-h"');
         assert.ok(obsAt > 0 && obsAt < personalAt, 'the observations stay the main job; the watch tools follow them');
+    });
+
+    await check('the observations lead with one sentence and keep the rest in a "How to read this" fold', async () => {
+        const html = (await t.get('/i/ACME')).text;
+        assert.ok(html.includes('Each value as the source stated it, with when it was true and where it came from.'));
+        assert.ok(html.includes('<details class="obs-how"><summary>How to read this</summary>'), 'the extra explanation is folded');
     });
 
     await check('the "Free, always" line is on the instrument page, with no paid tier, card or trial', async () => {
@@ -52,19 +61,25 @@ const HOUR = 3600e3;
         assert.ok(html.indexOf('id="obs-h"') < html.indexOf('Free, always'), 'it labels the observations themselves, not a block above them');
     });
 
+    const rowOf = (html, id) => {
+        const at = html.indexOf(`id="${id}"`);
+        return at < 0 ? '' : html.slice(at, html.indexOf('</li>', at));
+    };
+
     await check('a price is labelled source-stated, not a live quote; no delay is invented', async () => {
         const html = (await t.get('/i/ACME')).text;
-        assert.ok(html.includes('not a live quote'), 'the row says it is not a live quote');
-        assert.ok(html.includes('Trade holds no live market feed and records no source delay.'), 'the unknown delay is stated plainly');
+        const row = rowOf(html, observation.id);
+        assert.ok(row.includes('<div class="obs-note">Not a live quote</div>'), 'the row says it is not a live quote');
+        assert.ok(row.includes('Trade holds no live market feed and records no source delay.'), 'the unknown delay is stated in the fold');
         const other = await t.instrument({ symbol: 'FIG', name: 'Filed Figures Co' });
-        await t.observe(other, { metric: 'revenue.q', value: '1000', unit: 'USD', currency: 'USD', source_ref: 'rev-1', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
-        assert.ok(!(await t.get('/i/FIG')).text.includes('not a live quote'), 'a filed figure is not called a quote');
+        const { observation: fig } = await t.observe(other, { metric: 'revenue.q', value: '1000', unit: 'USD', currency: 'USD', source_ref: 'rev-1', observed_at: t.iso(t.T0 - 60e3), retrieved_at: t.iso(t.T0) });
+        assert.ok(!rowOf((await t.get('/i/FIG')).text, fig.id).includes('Not a live quote'), 'a filed figure is not called a quote');
     });
 
     await check('past max_age the value stays, marked stale with the reason', async () => {
         t.clock.advance(4 * HOUR);
         const r = await t.get('/i/ACME');
-        assert.ok(r.text.includes('<span class="badge stale">stale</span> since'), 'the stale verdict keeps its stale-since time');
+        assert.ok(r.text.includes('ovk-badge--warn') && r.text.includes('stale since 22 Sep'), 'the stale pill keeps its stale-since time');
         assert.ok(r.text.includes('The value is older than its 1 hour maximum age.'), 'the reason is max age, not source staleness');
         assert.ok(r.text.includes('<data value="10.50">10.50</data>'), 'the old value is never replaced');
     });

@@ -184,12 +184,9 @@ function createPages(ctx) {
             decision: pageNo === 1 ? decision : { ...decision, canonical: urls.instrument(instrument) },
             jsonLd: reading.jsonLd(instrument),
             feeds: ['rss', 'atom', 'json'].map((t) => ({ type: t, href: urls.path.documentsFeed(instrument, t), title: `${instrument.symbol} documents` })),
-            // The observation rows, the free line and the one-tap watch/alert forms use the OpenVibe Kit.
+            // The compact observation rows, the folds and the one-tap watch/alert forms use the OpenVibe Kit's tokens.
             styles: ['kit.css', 'kit-data.css'],
-            // Two observation cells hold a reference and a reason, not one short value: on a phone each takes the full
-            // card width instead of sharing a line with its label. Layout only; the colours are the kit's tokens.
-            inlineStyles: ['@media (max-width:599px){#observations td[data-label="Timestamps"],#observations td[data-label="Source and its reference"],#observations td[data-label="Freshness"]{display:block;text-align:left}#observations td[data-label="Timestamps"]::before,#observations td[data-label="Source and its reference"]::before,#observations td[data-label="Freshness"]::before{display:block;max-width:none;margin-bottom:4px}}'
-                + '@media (min-width:600px){#observations .ovk-table{table-layout:fixed}#observations .ovk-table thead th{white-space:normal}#observations th:nth-child(1){width:18%}#observations th:nth-child(2){width:15%}#observations th:nth-child(3){width:15%}#observations th:nth-child(4){width:34%}#observations th:nth-child(5){width:18%}#observations .ovk-table .is-num{white-space:normal}}'],
+            inlineStyles: [views.observationStyles],
             personal: Boolean(signedIn),
             body: views.instrumentPage({
                 ...data, instrument, urls, pager, notice: common.noticeOf(req),
