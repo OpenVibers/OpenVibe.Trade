@@ -20,6 +20,7 @@ function grouped(value) {
  */
 const { html, raw, breadcrumbsHtml, paginationHtml } = require('openvibe-publishing/ssr');
 const showcase = require('openvibe-shared/showcase');
+const kit = require('openvibe-shared/kit');
 
 const ISO = (v) => (v == null ? null : (typeof v === 'number' ? new Date(v).toISOString() : String(v)));
 
@@ -38,6 +39,42 @@ function staleBadge(f) {
         return html`<span class="badge stale">stale</span>${f.stale_since ? html` since ${when(f.stale_since)}` : html` <span class="muted">(${f.reason === 'source_unknown' ? 'freshness unknown' : 'never fetched successfully'})</span>`}`;
     }
     return html`<span class="badge fresh">current</span>`;
+}
+
+/** A metric that states a price (or a rate) rather than a filed period figure. */
+const PRICE_METRIC_RE = /^(?:price|quote|close|rate)(?:\.|$)/i;
+const isPriceMetric = (metric) => PRICE_METRIC_RE.test(String(metric || ''));
+
+/** A duration in seconds as words ("1 hour", "2 days"), for a max age the database holds. */
+function durationWords(sec) {
+    const n = Number(sec);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    for (const [size, label] of [[86400, 'day'], [3600, 'hour'], [60, 'minute'], [1, 'second']]) {
+        if (n % size === 0) { const v = n / size; return `${v} ${label}${v === 1 ? '' : 's'}`; }
+    }
+    return `${n} seconds`;
+}
+
+const STALE_REASON = {
+    value_older_than_max_age: 'The value is older than its maximum age.',
+    source_stale: 'The source is behind its own freshness window.',
+    source_unknown: 'The source has not reported its freshness.',
+};
+
+/** What the row says about its freshness: the verdict, why, and the value's own maximum age when it has one. */
+function freshnessDetail(o) {
+    const f = o.freshness || {};
+    const age = durationWords(o.max_age_sec);
+    if (!f.stale) {
+        return age
+            ? html`Current; stale after ${age} from the observed time.`
+            : html`Current; no maximum age is set, so the source window decides.`;
+    }
+    const why = f.reason === 'value_older_than_max_age' && age
+        ? html`The value is older than its ${age} maximum age.`
+        : html`${STALE_REASON[f.reason] || 'The source is stale.'}`;
+    const own = f.reason !== 'value_older_than_max_age' && age ? html` Stale after ${age} from the observed time.` : '';
+    return html`${why}${own}`;
 }
 
 function csrfField(token) { return html`<input type="hidden" name="_csrf" value="${token}">`; }
@@ -164,32 +201,58 @@ function observationsTable(instrument, observations) {
         return html`<p class="empty" id="no-observations">No observations have been recorded for ${instrument.symbol}, so no number is shown.</p>`;
     }
     const ordered = observations.slice().sort((a, b) => (metricOrder(a.metric) < metricOrder(b.metric) ? -1 : metricOrder(a.metric) > metricOrder(b.metric) ? 1 : 0));
-    const rows = ordered.map((o) => html`<tr id="${o.id}" class="${o.freshness.stale ? 'is-stale' : ''}">
-        <th scope="row">${labelOf(o.metric)}${o.period ? html` <span class="muted">(${o.period})</span>` : ''}</th>
-        <td class="num"><data value="${o.value}">${grouped(o.value)}</data> ${o.unit}${o.currency && o.currency !== o.unit ? html` <span class="muted">${o.currency}</span>` : ''}</td>
-        <td>${when(o.observed_at)}</td>
-        <td>${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.key}</a>` : o.source.key}</td>
-        <td>${when(o.retrieved_at)}</td>
-        <td>${staleBadge(o.freshness)}</td>
-    </tr>`);
-    return html`<table tabindex="0" class="data observations">
-<caption>Latest observation per metric. Values are exactly as the source stated them.</caption>
-<thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">Observed</th><th scope="col">Source</th><th scope="col">Retrieved</th><th scope="col">Freshness</th></tr></thead>
-<tbody>${rows}</tbody></table>`;
+    const rows = ordered.map((o) => ({
+        metric: html`<span id="${o.id}">${labelOf(o.metric)}${o.period ? html` <span class="muted">(${o.period})</span>` : ''}</span>${isPriceMetric(o.metric) ? html` ${raw(kit.badge('not a live quote', 'warn'))}` : ''}`,
+        value: html`<data value="${o.value}">${grouped(o.value)}</data> ${o.unit}${o.currency && o.currency !== o.unit ? html` <span class="muted">${o.currency}</span>` : ''}`,
+        timestamps: html`<div>Observed ${when(o.observed_at)}</div><div>Retrieved ${when(o.retrieved_at)}</div>`,
+        source: o.source.url
+            ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.key}</a>
+<div class="muted">Reference <code>${o.source.ref}</code></div>
+<div class="muted"><a href="${o.source.url}" rel="nofollow noopener">${o.source.url}</a></div>`
+            : html`${o.source.key}
+<div class="muted">Reference <code>${o.source.ref}</code></div>
+<div class="muted">No source URL recorded.</div>`,
+        freshness: html`<div class="${o.freshness.stale ? 'is-stale' : ''}">${staleBadge(o.freshness)}</div>
+<div class="muted">${freshnessDetail(o)}</div>`,
+    }));
+    // kit.table stacks each row into a card under 600 px: the metric is its title and every other cell says its label.
+    return kit.table({
+        id: 'observations',
+        columns: [
+            { key: 'metric', label: 'Metric', primary: true, html: true },
+            { key: 'value', label: 'Value', num: true, html: true },
+            { key: 'timestamps', label: 'Timestamps', html: true },
+            { key: 'source', label: 'Source and its reference', html: true },
+            { key: 'freshness', label: 'Freshness', html: true },
+        ],
+        rows,
+        caption: 'Latest observation per metric. Values are exactly as the source stated them. Observed is when the value was true; retrieved is when we fetched it; every row carries the source\'s own reference.',
+    }) + (ordered.some((o) => isPriceMetric(o.metric))
+        ? '<p class="muted">Price rows are the values the source stated at the observed time, not live quotes. Trade holds no live market feed and records no source delay.</p>'
+        : '');
 }
 
 function sourcesTable(list, { caption }) {
     if (!list.length) return html`<p class="empty">No sources have reported yet.</p>`;
-    const rows = list.map((s) => html`<tr id="source-${s.key}">
-        <th scope="row">${s.name || s.key}${s.name && s.name !== s.key ? html` <span class="muted">${s.key}</span>` : ''}</th>
-        <td>${s.status === 'fresh' ? html`<span class="badge fresh">current</span>` : s.status === 'unknown' ? html`<span class="badge stale">freshness unknown</span>` : html`<span class="badge stale">stale</span>${s.stale_since ? html` since ${when(s.stale_since)}` : ''}`}</td>
-        <td>${when(s.last_success_at, 'never')}</td>
-        <td>${s.stale_after_sec ? `${Math.round(s.stale_after_sec / 60)} min` : ''}</td>
-        <td>${s.upstream_status || html`<span class="muted">not reported</span>`}</td>
-    </tr>`);
-    return html`<table tabindex="0" class="data sources"><caption>${caption}</caption>
-<thead><tr><th scope="col">Source</th><th scope="col">Freshness</th><th scope="col">Last successful fetch</th><th scope="col">Stale after</th><th scope="col">Sources reports</th></tr></thead>
-<tbody>${rows}</tbody></table>`;
+    const rows = list.map((s) => ({
+        source: html`<span id="source-${s.key}">${s.name || s.key}${s.name && s.name !== s.key ? html` <span class="muted">${s.key}</span>` : ''}</span>`,
+        freshness: s.status === 'fresh' ? html`<span class="badge fresh">current</span>` : s.status === 'unknown' ? html`<span class="badge stale">freshness unknown</span>` : html`<span class="badge stale">stale</span>${s.stale_since ? html` since ${when(s.stale_since)}` : ''}`,
+        last: when(s.last_success_at, 'never'),
+        window: s.stale_after_sec ? `${Math.round(s.stale_after_sec / 60)} min` : html`<span class="muted">not stated</span>`,
+        upstream: s.upstream_status || html`<span class="muted">not reported</span>`,
+    }));
+    return html`${raw(kit.table({
+        id: 'sources',
+        columns: [
+            { key: 'source', label: 'Source', primary: true, html: true },
+            { key: 'freshness', label: 'Freshness', html: true },
+            { key: 'last', label: 'Last successful fetch', html: true },
+            { key: 'window', label: 'Stale after', html: true },
+            { key: 'upstream', label: 'Sources reports', html: true },
+        ],
+        rows,
+        caption,
+    }))}`;
 }
 
 function citeList(cites, instrument, urls) {
@@ -241,34 +304,45 @@ function documentsSection(instrument, docs, { pager, urls }) {
 ${raw(paginationHtml(pager))}${feeds}</section>`;
 }
 
-function personalTools(instrument, { viewer, watchlists, csrf, loginHref }) {
+function personalTools(instrument, { viewer, watchlists, csrf, loginHref, limits }) {
     if (!viewer || viewer.kind !== 'user' || !viewer.subject) {
         return html`<section class="personal" aria-labelledby="personal-h"><h2 id="personal-h">Watch this instrument</h2>
-<p><a href="${loginHref}">Sign in</a> to add ${instrument.symbol} to a private watchlist or to get an alert when a new document or observation arrives.</p></section>`;
+<p><a href="${loginHref}">Sign in</a> to add ${instrument.symbol} to a private watchlist or to get an alert when a new document or observation arrives. Watchlists and alerts are free, always: no paid tier, no card, no trial.</p></section>`;
     }
+    const first = watchlists[0];
+    const oneWatch = kit.action({ action: '/watchlists/watch', hidden: { _csrf: csrf, symbol: instrument.symbol }, label: first ? 'Add to watchlist' : `Watch ${instrument.symbol}`, icon: 'star', kind: 'primary' });
+    const oneAlert = kit.action({ action: '/alerts', hidden: { _csrf: csrf, symbol: instrument.symbol, kind: 'new_document' }, label: 'Alert me to new filings', icon: 'bell', kind: 'quiet' });
     const options = watchlists.map((w) => html`<option value="${w.id}">${w.name}</option>`);
+    const choose = watchlists.length > 1 ? html`<form method="post" action="/watchlists/item" class="inline-form">${csrfField(csrf)}
+  <input type="hidden" name="symbol" value="${instrument.symbol}">
+  <label for="wl">Add to another watchlist</label><select id="wl" name="watchlist_id">${options}</select>
+  <button type="submit">Add</button></form>` : '';
+    const more = kit.fold({
+        title: 'More watchlist and alert options',
+        body: html`${choose}
+<form method="post" action="/alerts" class="inline-form">${csrfField(csrf)}
+  <input type="hidden" name="symbol" value="${instrument.symbol}"><input type="hidden" name="kind" value="filing_type">
+  <label>Alert me to a kind of filing <input name="form_types" placeholder="10-K, 10-Q, 8-K" maxlength="120" required></label>
+  <button type="submit">Create filing alert</button></form>
+<form method="post" action="/alerts" class="inline-form">${csrfField(csrf)}
+  <input type="hidden" name="symbol" value="${instrument.symbol}"><input type="hidden" name="kind" value="threshold">
+  <label>Alert me when a number crosses a line</label>
+  <label>Observation <input name="metric" placeholder="metric, e.g. price.close" maxlength="80" required></label>
+  <label>Operator <select name="operator"><option value="above">above</option><option value="below">below</option></select>
+  <input name="threshold" placeholder="value" maxlength="40" required> <input name="unit" placeholder="unit, e.g. USD" maxlength="20" required></label>
+  <button type="submit">Create observation alert</button></form>
+${limits ? html`<p class="muted">An account can keep up to ${limits.watchlistsPerSubject} watchlists of ${limits.itemsPerWatchlist} instruments, and up to ${limits.alertRulesPerSubject} alert rules. These limits are this site's configuration, not a paid tier.</p>` : ''}`,
+    });
     return html`<section class="personal" aria-labelledby="personal-h"><h2 id="personal-h">Watch this instrument <span class="badge">private</span></h2>
-${watchlists.length ? html`<form method="post" action="/watchlists/item" class="inline-form">${csrfField(csrf)}
-  <input type="hidden" name="symbol" value="${instrument.symbol}">
-  <label for="wl">Add to watchlist</label><select id="wl" name="watchlist_id">${options}</select>
-  <button type="submit">Add</button></form>` : html`<p><a href="/watchlists">Create a watchlist</a> first.</p>`}
-<form method="post" action="/alerts" class="alert-form">${csrfField(csrf)}
-  <input type="hidden" name="symbol" value="${instrument.symbol}">
-  <fieldset><legend>New alert for ${instrument.symbol}</legend>
-  <label><input type="radio" name="kind" value="new_document" checked> Any new document</label>
-  <label><input type="radio" name="kind" value="filing_type"> New filing of type(s) <input name="form_types" placeholder="10-K, 10-Q, 8-K" maxlength="120"></label>
-  <label><input type="radio" name="kind" value="threshold"> Observation
-    <input name="metric" placeholder="metric, e.g. price.close" maxlength="80">
-    <select name="operator"><option value="above">above</option><option value="below">below</option></select>
-    <input name="threshold" placeholder="value" maxlength="40"> <input name="unit" placeholder="unit, e.g. USD" maxlength="20"></label>
-  </fieldset>
-  <button type="submit">Create alert</button>
-  <p class="muted">Alerts are delivered as OpenVibe notifications, once per triggering observation or document. No email is sent.</p>
-</form></section>`;
+<p class="muted">One tap: keep ${instrument.symbol} on your watchlist, or get a notification for every new filing.${first ? html` The watchlist button adds it to “${first.name}”.` : html` The first tap starts a private watchlist called “Watching”.`}</p>
+<p class="personal-actions">${raw(oneWatch)} ${raw(oneAlert)}</p>
+${raw(more)}
+<p class="muted">Alerts are delivered as OpenVibe notifications, once per triggering observation or document. No email is sent.</p>
+</section>`;
 }
 
 /** The AI brief: labelled, its points linked to the rows they cite, and how to get one when there is none. */
-function briefSection(instrument, d) {
+function briefSection(instrument, d, { hasDocuments = false } = {}) {
     const b = d.brief;
     const anchor = (c) => `#${c.id}`;
     const ask = d.briefs && d.briefs.canAsk ? html`<form method="post" action="/i/${encodeURIComponent(instrument.symbol)}/brief" class="inline-form">
@@ -279,11 +353,12 @@ function briefSection(instrument, d) {
         return html`<section aria-labelledby="ai-brief-h" id="ai-brief"><h2 id="ai-brief-h">AI brief</h2>
 <p>OpenVibe.AI can write a short brief on ${instrument.symbol} from the SEC numbers and filings on this page, every point linked to the figure it rests on. It takes a few seconds.</p>${ask}</section>`;
     }
-    return html`<section aria-labelledby="ai-brief-h" id="ai-brief" class="ai-brief"><h2 id="ai-brief-h">AI brief <span class="badge">AI-written, not reviewed by a person</span></h2>
+    return html`<section aria-labelledby="ai-brief-h" id="ai-brief" class="ai-brief"><h2 id="ai-brief-h">AI brief <span class="badge">OpenVibe.AI desk — AI-written, not reviewed by a person</span></h2>
 ${b.summary ? html`<p>${b.summary}</p>` : ''}
 ${b.points.length ? html`<ul>${b.points.map((p) => html`<li>${p.text} ${p.cites.map((c, n) => html`<a class="cite" href="${anchor(c)}" title="${c.kind === 'document' ? 'The filing this rests on' : 'The figure this rests on'}">[${n + 1}]</a>`)}</li>`)}</ul>` : ''}
 <p class="muted">${b.disclaimer} Written ${when(b.created_at)}${b.as_of ? html` from figures and filings up to ${when(b.as_of)}` : ''}${b.model ? html` (${b.model})` : ''}.</p>
 ${b.gaps.length ? html`<details><summary>What the sources did not support</summary><ul>${b.gaps.map((g) => html`<li>${g}</li>`)}</ul></details>` : ''}
+${hasDocuments ? html`<p class="muted">It rests on the <a href="#docs-h">filings on this page</a> and the figures above; each point links to the row it cites.</p>` : ''}
 ${ask}</section>`;
 }
 
@@ -296,12 +371,14 @@ function instrumentPage(d) {
 <h1>${instrument.symbol} <span class="name">${instrument.name}</span></h1>
 <p class="meta">${meta}${other.length ? html` · also ${other.map((a) => a.value).join(', ')}` : ''}${instrument.status !== 'active' ? html` · <span class="badge stale">archived</span>` : ''}</p>
 ${notice(d.notice)}
-${briefSection(instrument, d)}
-<section aria-labelledby="obs-h"><h2 id="obs-h">Observations</h2>${observationsTable(instrument, observations)}</section>
+${briefSection(instrument, d, { hasDocuments: documents.length > 0 })}
+<section aria-labelledby="obs-h"><h2 id="obs-h">Observations</h2>
+${raw(kit.notice({ kind: 'ok', html: '<strong>Free, always.</strong> No paid tier, no card, no trial.' }))}
+${raw(observationsTable(instrument, observations))}</section>
+${personalTools(instrument, d)}
 ${contextSection(instrument, context, urls, { pending: d.pending, editor: d.viewer && d.viewer.editor })}
 ${documentsSection(instrument, documents, { pager: d.pager, urls })}
 <section aria-labelledby="src-h"><h2 id="src-h">Source freshness</h2>${sourcesTable(sources, { caption: `Sources behind this page. A source is stale when its last successful fetch is older than its window.` })}</section>
-${personalTools(instrument, d)}
 <p class="muted">Machine-readable: <a href="${urls.path.instrumentJson(instrument)}">${instrument.symbol}.json</a> (the same data with every timestamp and source).</p>`;
 }
 
