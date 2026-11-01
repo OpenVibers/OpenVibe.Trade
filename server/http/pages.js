@@ -28,10 +28,15 @@ const views = require('../render/views');
 const home = require('../render/home');
 const { SITE_SUMMARY } = require('../render/layout');
 const { define } = require('./routes');
+const { createTtlCache } = require('./ttl-cache');
 
 function createPages(ctx) {
     const { config, instruments, documents, reading, freshness, urls, watchlists, context, common, sync, observations } = ctx;
     const router = express.Router();
+    const FILINGS_PER_PAGE = 50;
+    // /filings is the same for every anonymous reader: its four queries (two counts, the page and the form list) were
+    // ~15 ms each on 9k documents. A minute is as stale as its own Cache-Control header already lets a shared cache be.
+    const filingsCache = createTtlCache({ ttlMs: 60_000, max: 100 });
     const listing = (path) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: urls.abs(path), wordCount: 0 }, { policy: { minWords: 0 } });
 
     // What shipped on OpenVibe.Trade: the shared update log every OpenVibe site has.
@@ -113,18 +118,29 @@ function createPages(ctx) {
         const form = typeof req.query.form === 'string' && /^[A-Za-z0-9 ./-]{1,20}$/.test(req.query.form) ? req.query.form.toUpperCase() : null;
         const pageNo = Math.max(parseInt(req.query.page, 10) || 1, 1);
         const forms = form ? [form] : null;
-        const total = await documents.countOf(forms);
+        const anonymous = !req.viewer || req.viewer.kind === 'anonymous';
+        const key = `${form || '*'}:${pageNo}`;
+        let cached = anonymous ? filingsCache.get(key) : undefined;
+        if (!cached) {
+            const [total, docs, counts] = await Promise.all([
+                documents.countOf(forms),
+                documents.recentOf(forms, { limit: FILINGS_PER_PAGE, offset: (pageNo - 1) * FILINGS_PER_PAGE }).then(withInstruments),
+                documents.formCounts(ctx.store.now() - 7 * DAY),
+            ]);
+            cached = { total, docs, counts };
+            if (anonymous) filingsCache.set(key, cached);
+        }
+        const { total, docs, counts } = cached;
         const base = form ? `/filings?form=${encodeURIComponent(form)}` : '/filings';
-        const pager = paginate({ page: pageNo, perPage: 50, total, href: (p) => (p === 1 ? base : `${base}${form ? '&' : '?'}page=${p}`) });
+        const pager = paginate({ page: pageNo, perPage: FILINGS_PER_PAGE, total, href: (p) => (p === 1 ? base : `${base}${form ? '&' : '?'}page=${p}`) });
         if (pager.outOfRange && total) return common.notFound(req, res);
-        const docs = await withInstruments(await documents.recentOf(forms, { limit: pager.limit, offset: pager.offset }));
         const path = pageNo === 1 ? base : `${base}${form ? '&' : '?'}page=${pageNo}`;
         const label = form ? (views.formLabel(form) ? `${views.formLabel(form)}s (${form})` : `${form} filings`) : 'SEC filings as they arrive';
         common.page(req, res, {
             title: pageNo === 1 ? label : `${label}, page ${pageNo}`, canonical: urls.abs(form ? '/filings' : path),
             decision: form ? seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: urls.abs('/filings'), wordCount: 0, noindex: true }, { policy: { minWords: 0 } }) : listing(path),
             description: 'The newest SEC filings from EDGAR: annual and quarterly reports, current reports, proxies and prospectuses, each with when it was published and retrieved.',
-            feeds: FEEDS, body: views.filingsPage({ docs, pager, form, counts: await documents.formCounts(ctx.store.now() - 7 * DAY), urls }),
+            feeds: FEEDS, body: views.filingsPage({ docs, pager, form, counts, urls }),
         });
     });
 
