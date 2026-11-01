@@ -428,7 +428,7 @@ ${sourcesTable(sources, { caption: 'Sources and their freshness, computed with t
 
 function watchlistsPage({ viewer, lists, rules, deliveries, csrf, loginHref, notice: n }) {
     if (!viewer || viewer.kind !== 'user' || !viewer.subject) {
-        return html`<h1>Watchlists</h1><p>Watchlists and alerts are private to your OpenVibe account. <a href="${loginHref}">Sign in</a> to see yours.</p>`;
+        return html`<h1>Watchlists</h1><p>Watchlists and alerts are private to your OpenVibe account.</p><p><a class="sc-btn sc-primary" href="${loginHref}">Sign in to see yours</a></p>`;
     }
     const listHtml = lists.map((w) => html`<section class="card" aria-label="${w.name}">
 <h2>${w.name}</h2>

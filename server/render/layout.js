@@ -108,7 +108,8 @@ function renderPage(o) {
         navLinks: NAV_LINKS,
         home: '/',
         css: asset('css/trade.css'),
-        styles: o.styles,   // openvibe-shared stylesheet names (the home page's showcase.css)
+        // openvibe-shared stylesheet names: showcase.css on every page, since inner pages use its buttons (2026-11-01).
+        styles: [...new Set(['showcase.css', ...(o.styles || [])])],
         release: RELEASE,
         account,
         header: `<p class="disclaimer" role="note"><strong>${esc(DISCLAIMER)}</strong> Every number shows when it was observed and where it came from; stale sources are labelled as stale.</p>`,
