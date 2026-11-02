@@ -71,7 +71,7 @@ function createPages(ctx) {
         const [kinds, docStats, obsStats, briefStats, briefs, rateRows, reportDocs, forms, recentDocs, movers] = await Promise.all([
             instruments.countByKind(), documents.stats(now - DAY), observations.stats(), ctx.briefs.stats(), ctx.briefs.recent(6),
             observations.rates(), documents.recentOf(['10-K', '10-Q', '20-F', '40-F'], { limit: 8 }), documents.formCounts(now - 7 * DAY),
-            documents.recent(10), instruments.page({ limit: 12, offset: 0 }),
+            documents.recent(8), instruments.page({ limit: 8, offset: 0 }),
         ]);
         const rates = await Promise.all(rateRows.map(async (r) => ({ ...r, dto: await observations.dto(r.latest, { now }) })));
         const faq = home.faqItems();
@@ -88,8 +88,6 @@ function createPages(ctx) {
             description: 'SEC filings as they arrive, the figures inside them, euro reference rates and AI briefs that cite every number, for about 8,000 US companies. Information only.',
             // The home page carries the site's ai-summary meta and WebPage JSON-LD (v1.3.0 forwards it).
             summary: SITE_SUMMARY, styles: [showcase.STYLESHEET], bodyClass: 'home', feeds: FEEDS,
-            // The rule that shows the picked pane of the home's pick block: one per pane, written for this page.
-            inlineStyles: [home.paneRules(data, urls)],
             jsonLd: [
                 seo.compact({ '@context': 'https://schema.org', '@type': 'WebSite', url: urls.abs('/'), name: 'OpenVibe.Trade', inLanguage: 'en', potentialAction: { '@type': 'SearchAction', target: `${urls.abs('/resolve')}?q={q}`, 'query-input': 'required name=q' } }),
                 home.faqJsonLd(faq),

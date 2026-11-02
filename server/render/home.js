@@ -12,7 +12,7 @@
 const { html, raw } = require('openvibe-publishing/ssr');
 const showcase = require('openvibe-shared/showcase');
 const { when, staleBadge, grouped, clip, formLabel, filingLine, instrumentsTable } = require('./views');
-const { pickBlock, pickRules, foldBlock } = require('./short');
+const { pickBlock, foldBlock } = require('./short');
 
 const count = (n) => Number(n).toLocaleString('en-US');
 
@@ -95,7 +95,7 @@ function reportCards(list, urls) {
 /** This week's filings by form: chips with the plain name, the code and the count, each to /filings?form=. */
 function formChips(counts) {
     if (!counts.length) return '';
-    return html`<ul class="tr-chips">${counts.slice(0, 16).map((c) => html`<li><a href="/filings?form=${encodeURIComponent(c.form_type)}">${formLabel(c.form_type) ? html`${formLabel(c.form_type)} <span class="muted">(${c.form_type})</span>` : c.form_type}<span class="tr-n"><span class="sr-only">: </span>${count(c.count)}</span></a></li>`)}</ul>`;
+    return html`<ul class="tr-chips">${counts.slice(0, 8).map((c) => html`<li><a href="/filings?form=${encodeURIComponent(c.form_type)}">${formLabel(c.form_type) ? html`${formLabel(c.form_type)} <span class="muted">(${c.form_type})</span>` : c.form_type}<span class="tr-n"><span class="sr-only">: </span>${count(c.count)}</span></a></li>`)}</ul>`;
 }
 
 /** Questions people ask, answered from how the site works (also the page's FAQPage JSON-LD). */
@@ -128,13 +128,6 @@ function homePanes(d, urls) {
         { id: 'recent', label: 'Filings', html: section({ id: 'recent', title: 'Newest filings', lede: 'As they arrive from the SEC, each with when it was published and when it was retrieved.', more: { href: '/filings', label: 'More filings' }, body: d.recent.length ? html`<ul class="docs">${d.recent.map((r) => filingLine(r, urls))}</ul>` : '' }) },
         { id: 'movers', label: 'Companies', html: section({ id: 'movers', title: 'Companies with something new', lede: 'The newest filing or figure first.', more: { href: '/instruments', label: `All ${count(s.instruments)} companies and currencies` }, body: d.movers.instruments.length ? instrumentsTable({ instruments: d.movers.instruments, latest: d.movers.latest, latestDocs: d.movers.latestDocs, urls }) : '' }) },
     ].filter((p) => p.html);
-}
-
-/** The rules that show the picked pane of the home's pick block: one per pane, written for this page. */
-function paneRules(d, urls) {
-    const ids = homePanes(d, urls).map((p) => p.id);
-    if (!ids.length) return '';
-    return `@supports selector(:has(*)){@media (max-width:640px){${pickRules('data', ids)}}}`;
 }
 
 /**
@@ -185,4 +178,4 @@ ${raw(foldBlock({
 <p>Feeds of recent documents: <a href="/feed.xml">RSS</a> · <a href="/atom.xml">Atom</a> · <a href="/feed.json">JSON Feed</a>. Source freshness: <a href="/sources">sources</a>.${d.sync && d.sync.last_ok_at ? html` Last synchronised with OpenVibe.Sources ${when(d.sync.last_ok_at)}.` : ''}</p>`;
 }
 
-module.exports = { homePage, homePanes, paneRules, faqItems, faqJsonLd, change };
+module.exports = { homePage, homePanes, faqItems, faqJsonLd, change };
