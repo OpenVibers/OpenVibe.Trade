@@ -100,18 +100,17 @@ function createDiscovery(ctx) {
             sections: [
                 { title: 'Start here', links: [
                     { title: 'Front page', url: abs('/'), note: 'AI briefs, euro reference rates, new annual and quarterly reports, filings by form, newest filings' },
-                    { title: 'Companies and currencies', url: abs('/instruments'), note: 'all instruments, the newest filing or figure first' },
+                    { title: 'Companies and currencies', url: abs('/instruments'), note: 'all instruments, the newest filing or figure first; each instrument page has a JSON twin, so append .json to any instrument URL (/i/<SYMBOL>.json)' },
                     { title: 'Filings', url: abs('/filings'), note: 'the newest SEC filings; /filings?form=10-K for one form type' },
                     { title: 'Source freshness', url: abs('/sources') },
                 ] },
-                // The JSON data is what an agent came for: it stays in a main section, and its URLs keep their URL.
+                // The JSON data is what an agent came for: it stays in a main section, and its URL keeps its URL.
                 { title: 'Data', links: [
-                    { title: 'Instrument JSON', url: abs('/i/AAPL.json'), note: 'append .json to any instrument URL (/i/<SYMBOL>.json)' },
                     { title: 'Recent documents (JSON Feed)', url: abs('/feed.json') },
                 ] },
                 { title: 'Feeds', links: [
-                    { title: 'Recent documents (RSS)', url: abs('/feed.xml') }, { title: 'Atom', url: abs('/atom.xml') },
-                    { title: 'Per instrument', url: abs('/feed.xml'), note: '/i/<SYMBOL>/documents.xml, .atom and .json' },
+                    { title: 'Recent documents (RSS)', url: abs('/feed.xml'), note: 'per instrument, /i/<SYMBOL>/documents.xml, .atom and .json' },
+                    { title: 'Atom', url: abs('/atom.xml') },
                 ] },
             ],
             // llmstxt.org's "## Optional": what an agent may skip when it needs a shorter context.
