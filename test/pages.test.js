@@ -85,6 +85,21 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(!(await t.get('/sitemaps/instruments.xml')).text.includes('<loc>'), 'no indexable instrument yet');
         assertSitemapLastmods((await t.get('/sitemaps/instruments.xml')).text);
         assert.ok((await t.get('/llms.txt')).text.startsWith('# OpenVibe.Trade'));
+        // AGT-5: the home at /index.md, each page at its twin, an Optional section last.
+        const llms = (await t.get('/llms.txt')).text;
+        assert.ok(llms.includes('[Front page](https://openvibe.trade/index.md)'), 'the home is /index.md');
+        assert.ok(llms.includes('[Filings](https://openvibe.trade/filings.md)'), 'a page is its twin');
+        assert.ok(llms.includes('[Recent documents (RSS)](https://openvibe.trade/feed.xml)'), 'a feed keeps its URL');
+        assert.ok(!/\]\(https:\/\/openvibe\.trade\/i\/[A-Z<]/.test(llms), 'no instrument URL is invented in llms.txt');
+        assert.match(llms, /\n## Optional\n/);
+        assert.match(llms, /\n## Optional\n\n[\s\S]*\[Sitemap\]\(https:\/\/openvibe\.trade\/sitemap\.xml\)/);
+        assert.strictEqual(llms.lastIndexOf('\n## '), llms.indexOf('\n## Optional'), 'Optional is the last section');
+        const own = [...llms.matchAll(/\]\((https:\/\/openvibe\.trade[^)\s]*)\)( \(HTML\))?/g)];
+        assert.ok(own.length > 5, String(own.length));
+        for (const [, url, html] of own) {
+            const p = new URL(url).pathname;
+            assert.ok(p.endsWith('.md') || /\.[a-z0-9]+$/.test(p) || p.startsWith('/api/') || html, `${url} is a twin, a file or marked (HTML)`);
+        }
     });
 
     await check('resolve: one match redirects to the canonical page; a miss says no guess was made', async () => {
