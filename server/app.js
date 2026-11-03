@@ -123,7 +123,7 @@ async function createApp(opts = {}) {
     const app = express();
     // GET /openapi.json (SEO-3): this service's public API as OpenAPI 3.1, generated from the contracts
     // (openvibe-contracts); the operations they mark internal-only are left out.
-    app.get('/openapi.json', (_req, res) => {
+    define(app, 'get', '/openapi.json', 'openApi', (_req, res) => {
         const doc = require('openvibe-contracts').openapi.document('trade');
         if (!doc) return res.status(404).type('text/plain').send('No API document.');
         const METHODS = new Set(['get', 'put', 'post', 'delete', 'patch', 'head', 'options']);

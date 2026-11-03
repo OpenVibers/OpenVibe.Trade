@@ -7,7 +7,7 @@ const path = require('path');
 const doc = require('openvibe-contracts').openapi.document('trade');
 assert.ok(doc && doc.openapi && /^3\.1/.test(doc.openapi), 'the contracts carry an OpenAPI 3.1 document for trade');
 const src = fs.readFileSync(path.join(__dirname, '..', 'server/app.js'), 'utf8');
-assert.match(src, /app\.get\('\/openapi\.json'/, 'the route is mounted');
+assert.match(src, /define\(app, 'get', '\/openapi\.json', 'openApi'/, 'the route is mounted, through define()');
 assert.match(src, /openapi\.document\('trade'\)/);
 assert.match(src, /vis\.every\(\(v\) => v === 'internal'\)\) continue;/, 'internal-only operations are left out');
 console.log('openapi.json: ok');
