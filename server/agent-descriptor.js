@@ -9,6 +9,7 @@ module.exports = {
     home: 'https://openvibe.trade',
     site: 'openvibe.trade',
     api: '/api/v1',
+    openapi: '/openapi.json',
     policy: {
         auth: ['none', 'Network OIDC'],
     },
