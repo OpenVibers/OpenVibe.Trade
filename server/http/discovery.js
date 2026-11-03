@@ -91,6 +91,10 @@ function createDiscovery(ctx) {
     define(router, 'get', '/llms.txt', 'llmsTxt', (_req, res) => {
         res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(sharedSeo.llmsTxt({
             name: SITE_NAME,
+            // Each of this site's own pages is linked at its Markdown twin (AGT-5; openvibe-shared 4.108.0 leaves
+            // files, /api/ and /.well-known/ paths and other sites' links as they are).
+            markdown: true,
+            base: config.baseUrl,
             summary: SITE_SUMMARY,
             details: 'Every number on an instrument page is an observation with observed_at, retrieved_at and its source; an instrument without observations shows no number. Stale sources are labelled "stale since <time>" and never replaced. Each instrument page has a JSON twin at /i/<SYMBOL>.json with the same data. AI briefs (OpenVibe.AI) are written only from the SEC numbers and filings on the page, cite each one, are labelled as AI-written and not reviewed by a person, and never give advice; editor context drafted by AI is not published before a person reviews it. There is no custody, order execution, escrow, marketplace or personal advice.',
             sections: [
@@ -99,13 +103,22 @@ function createDiscovery(ctx) {
                     { title: 'Companies and currencies', url: abs('/instruments'), note: 'all instruments, the newest filing or figure first' },
                     { title: 'Filings', url: abs('/filings'), note: 'the newest SEC filings; /filings?form=10-K for one form type' },
                     { title: 'Source freshness', url: abs('/sources') },
-                    { title: 'Sitemap', url: abs('/sitemap.xml') },
+                ] },
+                // The JSON data is what an agent came for: it stays in a main section, and its URLs keep their URL.
+                { title: 'Data', links: [
+                    { title: 'Instrument JSON', url: abs('/i/AAPL.json'), note: 'append .json to any instrument URL (/i/<SYMBOL>.json)' },
+                    { title: 'Recent documents (JSON Feed)', url: abs('/feed.json') },
                 ] },
                 { title: 'Feeds', links: [
-                    { title: 'Recent documents (RSS)', url: abs('/feed.xml') }, { title: 'Atom', url: abs('/atom.xml') }, { title: 'JSON Feed', url: abs('/feed.json') },
-                    { title: 'Per instrument', url: abs('/'), note: '/i/<SYMBOL>/documents.xml, .atom and .json' },
+                    { title: 'Recent documents (RSS)', url: abs('/feed.xml') }, { title: 'Atom', url: abs('/atom.xml') },
+                    { title: 'Per instrument', url: abs('/feed.xml'), note: '/i/<SYMBOL>/documents.xml, .atom and .json' },
                 ] },
-                { title: 'Data', links: [{ title: 'Instrument JSON', url: abs('/'), note: 'append .json to an instrument URL (/i/<SYMBOL>.json)' }] },
+            ],
+            // llmstxt.org's "## Optional": what an agent may skip when it needs a shorter context.
+            optional: [
+                { title: 'Sitemap', url: abs('/sitemap.xml') },
+                { title: 'robots.txt', url: abs('/robots.txt') },
+                { title: 'llms-full.txt', url: abs('/llms-full.txt'), note: 'the indexable instrument pages, one short summary each' },
             ],
         }));
     });
