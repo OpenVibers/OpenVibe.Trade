@@ -218,6 +218,34 @@ function createContext({ store, config, ctx }) {
             return rev ? await api.view(instrument, rev) : null;
         },
 
+        /**
+         * Company pages with an AI context revision above the published one and no review yet:
+         * what waits for a person before the page can be indexed. Editor-only (checked by the route).
+         */
+        async pendingReviews() {
+            const rows = await db.prepare(`SELECT r.*, i.symbol, i.name, i.context_published_revision
+                FROM trade_context_revisions r JOIN trade_instruments i ON i.id = r.entity_id
+                WHERE i.status = 'active' AND r.number > COALESCE(i.context_published_revision, 0)
+                ORDER BY r.created_at, r.id LIMIT 1000`).all();
+            const items = [];
+            for (const row of rows) {
+                const rec = row.meta && row.meta.authorship;
+                if (!rec || !authorship.needsReview(rec)) continue;
+                const review = await store.reviews.latest(row.entity_id, row.number);
+                if (review) continue;
+                items.push({
+                    site: 'trade', kind: 'company_page', id: row.entity_id,
+                    title: `${row.symbol} — ${row.name}`,
+                    revision: row.number, state: row.number > (row.context_published_revision || 0) ? 'draft' : 'published',
+                    url: ctx.urls.instrument({ symbol: row.symbol }), editUrl: `/editor/i/${encodeURIComponent(row.symbol)}`,
+                    createdAt: new Date(row.created_at).toISOString(),
+                    reasons: [{ code: 'ai_generated_unreviewed', effect: 'noindex', detail: 'company context is an AI draft', text: 'AI-written and not reviewed by a person.' }],
+                    review: { method: 'POST', path: `/api/v1/instruments/${encodeURIComponent(row.symbol)}/context/revisions/${row.number}/review` },
+                });
+            }
+            return items.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+        },
+
         /** Revisions after the published one (drafts awaiting review or publication). */
         async pending(instrument) {
             const published = instrument.context_published_revision || 0;
