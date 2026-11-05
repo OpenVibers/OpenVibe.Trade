@@ -15,8 +15,8 @@
  *   GET /feed.xml | /atom.xml | /feed.json recent public documents across instruments
  *   GET /i/:symbol/documents.xml|.atom|.json  one instrument's documents
  *
- * Built from the database on every request, never from the viewer. Watchlists, alert rules,
- * deliveries and the editor never appear in any of them.
+ * Built from the database, never from the viewer (the instrument list at most once per config.sitemapTtlMs, shared by
+ * concurrent readers). Watchlists, alert rules, deliveries and the editor never appear in any of them.
  */
 const express = require('express');
 const seo = require('openvibe-publishing/seo');
@@ -24,6 +24,28 @@ const sharedSeo = require('openvibe-shared/seo');
 const cache = require('openvibe-shared/cache-policy');
 const { define } = require('./routes');
 const { DISCLAIMER, SITE_NAME, SITE_SUMMARY } = require('../render/layout');
+
+// Instruments whose gate decision a list build reads at once (the pool has a handful of connections for everyone).
+const INSTRUMENTS_PARALLEL = 8;
+
+/** fn over items, `limit` at a time; results in the items' order. */
+async function mapLimit(items, limit, fn) {
+    const out = new Array(items.length);
+    let next = 0;
+    const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i]); } };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return out;
+}
+
+/** One build at a time, shared by the readers that ask while it runs, reused for ttlMs (0: the next read rebuilds). */
+function shared(build, ttlMs, now) {
+    let value = null; let at = 0; let running = null;
+    return async () => {
+        if (value && now() - at < ttlMs) return value;
+        if (!running) running = build().then((v) => { value = v; at = now(); return v; }).finally(() => { running = null; });
+        return await running;
+    };
+}
 
 /**
  * The public page catalogue: /sitemaps/pages.xml lists the entries marked for the sitemap and
@@ -51,6 +73,13 @@ function createDiscovery(ctx) {
     const abs = urls.abs;
     const xml = (res, body, type = 'application/xml') => res.type(type).set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(body);
     const listing = (url) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: url, wordCount: 0 }, { policy: { minWords: 0 } });
+
+    // Every index candidate and its gate decision, for the sitemaps and /llms-full.txt: built INSTRUMENTS_PARALLEL at a
+    // time, once for concurrent readers, reused for config.sitemapTtlMs. All at once, each crawler fetch of
+    // /sitemap.xml weighed every candidate (a few queries each), and the SEC list keeps growing.
+    const instrumentEntries = shared(async () => mapLimit(await instruments.indexCandidates(), INSTRUMENTS_PARALLEL, async (i) => ({
+        instrument: i, decision: await indexing.decide(i),
+    })), Number(config.sitemapTtlMs) || 0, store.now);
 
     function feedItem(d, instrument) {
         const url = urls.documentAnchor(instrument, d);
@@ -126,12 +155,11 @@ function createDiscovery(ctx) {
     // page — the same gate the sitemap uses. The summary is the reviewed context, clipped; the
     // source's own full text is never reproduced (llms.txt states the rule).
     define(router, 'get', '/llms-full.txt', 'llmsFullTxt', async (_req, res) => {
-        const active = await instruments.indexCandidates();
-        const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
-        const instrumentsPages = await Promise.all(active.filter((_i, n) => decisions[n].indexable).map(async (i) => {
+        const entries = (await instrumentEntries()).filter(({ decision }) => decision.indexable);
+        const instrumentsPages = await mapLimit(entries, INSTRUMENTS_PARALLEL, async ({ instrument: i }) => {
             const rev = await context.published(i);
             return { title: `${i.symbol} — ${i.name}`, url: urls.instrument(i), text: rev ? String(rev.text || '').replace(/\s+/g, ' ').trim().slice(0, 300) : '' };
-        }));
+        });
         const pages = [...PUBLIC_PAGES, ...legalPages()].map((p) => ({ url: abs(p.path), title: p.title, text: p.text }));
         res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(sharedSeo.llmsFull({
             site: SITE_NAME, summary: SITE_SUMMARY, base: config.baseUrl, maxBytes: 512 * 1024,
@@ -149,10 +177,8 @@ function createDiscovery(ctx) {
     const pageLastmod = (instrument, changes) => Math.max(instrument.updated_at || 0, instrument.context_published_at || 0, changes.get(instrument.id) || 0);
 
     define(router, 'get', '/sitemap.xml', 'sitemapIndex', async (_req, res) => {
-        const active = await instruments.indexCandidates();
-        const decisions = await Promise.all(active.map(async (i) => await indexing.decide(i)));
-        const changes = await pageChanges();
-        const times = active.filter((i, n) => decisions[n].indexable).map((i) => pageLastmod(i, changes)).filter(Boolean);
+        const [entries, changes] = await Promise.all([instrumentEntries(), pageChanges()]);
+        const times = entries.filter(({ decision }) => decision.indexable).map(({ instrument }) => pageLastmod(instrument, changes)).filter(Boolean);
         const newest = times.length ? new Date(Math.max(...times)).toISOString() : null;
         const pagesNewest = (await documents.recent(1))[0];
         xml(res, seo.sitemapIndex([
@@ -171,13 +197,13 @@ function createDiscovery(ctx) {
     });
 
     define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {
-        const changes = await pageChanges();
         // Without a published context an instrument page is noindex (indexing.js), so only the candidates are weighed.
-        const entries = (await Promise.all((await instruments.indexCandidates()).map(async (i) => ({
+        const [weighed, changes] = await Promise.all([instrumentEntries(), pageChanges()]);
+        const entries = weighed.map(({ instrument: i, decision }) => ({
             loc: urls.instrument(i),
             ...(pageLastmod(i, changes) ? { lastmod: new Date(pageLastmod(i, changes)).toISOString() } : {}),
-            decision: await indexing.decide(i),
-        }))));
+            decision,
+        }));
         xml(res, seo.sitemap(entries).files[0]);
     });
 

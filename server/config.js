@@ -27,6 +27,10 @@ function load(env = process.env) {
         isProduction,
         // Public origin: canonical URLs, feeds, sitemaps and JSON-LD are built from it.
         baseUrl,
+        // The sitemaps' and /llms-full.txt's instrument list (every index candidate's gate decision) is built at most
+        // once in this window and shared (one build serves concurrent readers either way). Each crawler fetch of
+        // /sitemap.xml weighed every candidate: a few queries each, all at once. 0 = no reuse.
+        sitemapTtlMs: int(env.TRADE_SITEMAP_TTL_MS, isProduction ? 10 * 60 * 1000 : 0),
         trustProxy: env.TRUST_PROXY != null ? Number(env.TRUST_PROXY) : 2,
         // Per-actor limits (server/http/actor-limits.js, roadmap WS-R task 4): the API reads one caller
         // may make per minute and per hour. Writes set their own numbers there.
