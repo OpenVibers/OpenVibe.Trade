@@ -130,10 +130,52 @@ function homePanes(d, urls) {
     ].filter((p) => p.html);
 }
 
+/** The AI label a market brief carries: reviewed only after a person approved it in the queue. */
+const marketBriefLabel = (b) => (b.reviewed ? 'AI-written, reviewed by a person' : 'AI-written, not yet reviewed by a person');
+
+/** A brief's text, every point linked to the Trade page it rests on, its sources and its gaps. */
+function marketBriefBody(b) {
+    const cites = (list) => list.map((c) => html`<a class="cite" href="${c.url}">${c.label}</a>`);
+    return html`${b.summary ? html`<p>${b.summary}</p>` : ''}
+${b.points.length ? html`<ul>${b.points.map((p) => html`<li>${p.text} ${cites(p.cites)}</li>`)}</ul>` : ''}
+${b.cites.length ? html`<p class="muted tr-small">Sources: ${b.cites.map((c) => html`<a href="${c.url}">${c.label}</a>`)}</p>` : ''}
+<p class="muted">${b.disclaimer}${b.model ? html` (${b.model})` : ''}</p>
+${b.gaps.length ? html`<details><summary>What the sources did not support</summary><ul>${b.gaps.map((g) => html`<li>${g}</li>`)}</ul></details>` : ''}`;
+}
+
+/**
+ * The latest reviewed market brief on the home, in full. Only a person-approved brief is shown here; an unreviewed
+ * one is a one-line link (below) and its own noindex page.
+ */
+function marketBriefSection(b) {
+    if (!b) return '';
+    return html`<section class="tr-sec ai-brief" id="market-brief" aria-labelledby="market-brief-h">
+<div class="tr-head"><h2 id="market-brief-h">Market brief <span class="badge">${marketBriefLabel(b)}</span></h2><a class="tr-more" href="/market/${b.date}">Permalink</a></div>
+<p class="tr-lede">What changed across the market in the last 24 hours, in plain words, from the filings, figures and euro reference rates on OpenVibe.Trade. <time datetime="${b.date}">${b.date}</time>.</p>
+${marketBriefBody(b)}
+</section>`;
+}
+
+/** No reviewed brief yet: the home links to the unreviewed one's own (noindex) page, and shows no AI text. */
+function marketBriefTeaser(b) {
+    if (!b) return '';
+    return html`<p class="tr-market-teaser"><a href="/market/${b.date}">Today's market brief (AI-written, not yet reviewed) <span aria-hidden="true">→</span></a></p>`;
+}
+
+/** One brief's own page: /market/<YYYY-MM-DD>, with the gate's noindex until a person reviews it. */
+function marketBriefPage(b) {
+    return html`<p class="muted"><a href="/">OpenVibe.Trade</a> · Market brief</p>
+<h1>Market brief, <time datetime="${b.date}">${b.date}</time> <span class="badge">${marketBriefLabel(b)}</span></h1>
+<p class="tr-lede">What changed across the market in the last 24 hours, in plain words, from the filings, figures and euro reference rates on OpenVibe.Trade.</p>
+${marketBriefBody(b)}
+<p class="muted"><a href="/">Back to OpenVibe.Trade</a></p>`;
+}
+
 /**
  * d: { stats: { companies, currencies, filings, filingsDay, filers, figures, figureCompanies, briefs },
- *      briefs, rates: [{ symbol, name, latest, previous, dto }], reports, recent: [{ document, instrument }],
- *      forms: [{ form_type, count }], movers: { instruments, latest, latestDocs }, sync, faq }
+ *      marketBrief, marketBriefPending, briefs, rates: [{ symbol, name, latest, previous, dto }], reports,
+ *      recent: [{ document, instrument }], forms: [{ form_type, count }],
+ *      movers: { instruments, latest, latestDocs }, sync, faq }
  */
 function homePage(d, urls) {
     const s = d.stats;
@@ -154,6 +196,7 @@ function homePage(d, urls) {
 
     return html`${hero}
 <p class="muted">What this site is not: there is no order entry, no brokerage, no custody of money or assets, no marketplace and no personal recommendation here.</p>
+${raw(marketBriefSection(d.marketBrief) || marketBriefTeaser(d.marketBriefPending))}
 ${raw(pickBlock({
         key: 'data',
         label: 'The market, by kind',
@@ -178,4 +221,4 @@ ${raw(foldBlock({
 <p>Feeds of recent documents: <a href="/feed.xml">RSS</a> · <a href="/atom.xml">Atom</a> · <a href="/feed.json">JSON Feed</a>. Source freshness: <a href="/sources">sources</a>.${d.sync && d.sync.last_ok_at ? html` Last synchronised with OpenVibe.Sources ${when(d.sync.last_ok_at)}.` : ''}</p>`;
 }
 
-module.exports = { homePage, homePanes, faqItems, faqJsonLd, change };
+module.exports = { homePage, homePanes, marketBriefPage, faqItems, faqJsonLd, change };

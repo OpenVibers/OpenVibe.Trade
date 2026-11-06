@@ -68,7 +68,7 @@ function legalPages() {
 }
 
 function createDiscovery(ctx) {
-    const { config, store, instruments, documents, indexing, context, urls, common } = ctx;
+    const { config, store, instruments, documents, indexing, context, marketBriefs, urls, common } = ctx;
     const router = express.Router();
     const abs = urls.abs;
     const xml = (res, body, type = 'application/xml') => res.type(type).set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(body);
@@ -187,13 +187,20 @@ function createDiscovery(ctx) {
         ]));
     });
 
-    // The pages a person browses: the front page, every company and currency, the filings. Their lastmod is the
-    // newest filing's (they list it). /sources is public but noindex, so it never enters the sitemap.
+    // The pages a person browses: the front page, every company and currency, the filings, and each reviewed market
+    // brief's own page. Their lastmod is the newest filing's (they list it). /sources is public but noindex, so it
+    // never enters the sitemap. The home never depends on a brief: an unreviewed one is noindex on its own page.
     define(router, 'get', '/sitemaps/pages.xml', 'pagesSitemap', async (_req, res) => {
-        const newest = (await documents.recent(1))[0];
+        const [newestDoc, briefs] = await Promise.all([documents.recent(1), marketBriefs.reviewed(100)]);
+        const newest = newestDoc[0];
         const lastmod = newest ? Math.max(newest.first_seen_at, newest.published_at || 0) : null;
         const decide = (path) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: abs(path), wordCount: 0 }, { policy: { minWords: 0 } });
-        xml(res, seo.sitemap(PUBLIC_PAGES.filter((p) => p.sitemap).map((p) => ({ loc: abs(p.path), lastmod, decision: decide(p.path) }))).files[0]);
+        const entries = PUBLIC_PAGES.filter((p) => p.sitemap).map((p) => ({ loc: abs(p.path), lastmod, decision: decide(p.path) }));
+        for (const b of briefs) {
+            const loc = abs(`/market/${b.date}`);
+            entries.push({ loc, ...(b.created_at ? { lastmod: b.created_at } : {}), decision: decide(`/market/${b.date}`) });
+        }
+        xml(res, seo.sitemap(entries).files[0]);
     });
 
     define(router, 'get', '/sitemaps/instruments.xml', 'instrumentSitemap', async (_req, res) => {
