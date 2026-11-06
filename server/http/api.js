@@ -22,6 +22,7 @@
  *   GET    /instruments/:symbol/context/input              trade.context.read        (OpenVibe.AI workflow input)
  *   POST   /instruments/:symbol/context                    trade.context.propose     (AI drafts with X-OV-Origin: ai; editors)
  *   POST   /instruments/:symbol/context/revisions/:n/review   people on the editor list only
+ *   GET    /review-queue                                       editors: company pages whose AI context waits for review
  *   GET    /watchlists                                     trade.watchlist.read
  *   POST   /watchlists                                     trade.watchlist.create
  *   GET    /watchlists/:id                                 trade.watchlist.read
@@ -100,6 +101,12 @@ function createApi(ctx) {
         limit: Math.min(Math.max(parseInt(req.query.limit, 10) || def, 1), max),
         offset: Math.max(parseInt(req.query.offset, 10) || 0, 0),
     });
+
+    // The reviewer queue: company pages whose AI context draft waits for a person. Editors only.
+    define(router, 'get', '/review-queue', 'getReviewQueue', run(async (req) => {
+        if (!(req.viewer.kind === 'user' && req.viewer.editor)) throw new ApiError(403, 'editor.forbidden', 'Only Trade editors review the publication queue');
+        return { items: await context.pendingReviews() };
+    }));
 
     // ── Instruments ─────────────────────────────────────────
 
