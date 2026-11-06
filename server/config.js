@@ -122,6 +122,12 @@ function load(env = process.env) {
             perTick: Math.max(int(env.TRADE_BRIEFS_PER_TICK, 6), 0),
             perHour: Math.max(int(env.TRADE_BRIEFS_PER_HOUR, 40), 0),
         },
+        // The market-wide brief (domain/market-briefs.js): one UTC day at most, from the day's filings, euro rates and
+        // companies with new filings or figures. Off when TRADE_MARKET_BRIEFS=off, and always off without OpenVibe.AI.
+        marketBriefs: {
+            enabled: env.TRADE_MARKET_BRIEFS !== 'off',
+            intervalMs: Math.max(int(env.TRADE_MARKET_BRIEFS_INTERVAL_MS, 10 * 60_000), 10_000),
+        },
 
         // Browser origins that may call /api/v1 with a Bearer Network JWT (no cookies cross origins).
         apiCorsOrigins: list(env.API_CORS_ORIGINS || 'https://openvibe.network'),

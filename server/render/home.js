@@ -131,8 +131,27 @@ function homePanes(d, urls) {
 }
 
 /**
+ * The market-wide AI brief: its date, the AI label while a person has not reviewed it, every point linked to the
+ * Trade page it rests on, and the pages the whole brief cites. Nothing renders when there is no brief.
+ */
+function marketBriefSection(b) {
+    if (!b) return '';
+    const label = b.reviewed ? 'AI-written, reviewed by a person' : 'AI-written, not yet reviewed by a person';
+    const cites = (list) => list.map((c) => html`<a class="cite" href="${c.url}">${c.label}</a>`);
+    return html`<section class="tr-sec ai-brief" id="market-brief" aria-labelledby="market-brief-h">
+<div class="tr-head"><h2 id="market-brief-h">Market brief <span class="badge">${label}</span></h2></div>
+<p class="tr-lede">What changed across the market in the last 24 hours, in plain words, from the filings, figures and euro reference rates on OpenVibe.Trade. <time datetime="${b.date}">${b.date}</time>.</p>
+${b.summary ? html`<p>${b.summary}</p>` : ''}
+${b.points.length ? html`<ul>${b.points.map((p) => html`<li>${p.text} ${cites(p.cites)}</li>`)}</ul>` : ''}
+${b.cites.length ? html`<p class="muted tr-small">Sources: ${b.cites.map((c) => html`<a href="${c.url}">${c.label}</a>`)}</p>` : ''}
+<p class="muted">${b.disclaimer}${b.model ? html` (${b.model})` : ''}</p>
+${b.gaps.length ? html`<details><summary>What the sources did not support</summary><ul>${b.gaps.map((g) => html`<li>${g}</li>`)}</ul></details>` : ''}
+</section>`;
+}
+
+/**
  * d: { stats: { companies, currencies, filings, filingsDay, filers, figures, figureCompanies, briefs },
- *      briefs, rates: [{ symbol, name, latest, previous, dto }], reports, recent: [{ document, instrument }],
+ *      marketBrief, briefs, rates: [{ symbol, name, latest, previous, dto }], reports, recent: [{ document, instrument }],
  *      forms: [{ form_type, count }], movers: { instruments, latest, latestDocs }, sync, faq }
  */
 function homePage(d, urls) {
@@ -154,6 +173,7 @@ function homePage(d, urls) {
 
     return html`${hero}
 <p class="muted">What this site is not: there is no order entry, no brokerage, no custody of money or assets, no marketplace and no personal recommendation here.</p>
+${raw(marketBriefSection(d.marketBrief))}
 ${raw(pickBlock({
         key: 'data',
         label: 'The market, by kind',

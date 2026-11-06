@@ -12,12 +12,22 @@
  *                    their last read (domain/facts.js, TRADE_SEC_PER_TICK at most), then write AI briefs for the
  *                    companies whose numbers changed (domain/briefs.js, TRADE_BRIEFS_PER_TICK at most, within the
  *                    site's hourly budget)
+ *   market brief     every TRADE_MARKET_BRIEFS_INTERVAL_MS: write today's market-wide AI brief if none exists yet
+ *                    (domain/market-briefs.js; one a UTC day at most)
  */
-function createWorker({ config, sync, freshness, indexing, outbox, facts = null, briefs = null, sec = null, log = console }) {
+function createWorker({ config, sync, freshness, indexing, outbox, facts = null, briefs = null, marketBriefs = null, sec = null, log = console }) {
     let syncTimer = null;
     let freshTimer = null;
     let briefsTimer = null;
+    let marketTimer = null;
     let briefsRunning = false;
+
+    /** One market-wide brief a day at most; the daily cap lives in the domain's brief_date key. */
+    async function marketBriefsTick() {
+        if (!marketBriefs || !marketBriefs.enabled) return null;
+        const r = await marketBriefs.tick();
+        return r && r.created ? { created: 1 } : { created: 0 };
+    }
 
     async function briefsTick() {
         if (briefsRunning) return null;
@@ -66,6 +76,7 @@ function createWorker({ config, sync, freshness, indexing, outbox, facts = null,
     return {
         freshnessTick,
         briefsTick,
+        marketBriefsTick,
         start() {
             if (!config.worker.enabled) return;
             if (sync.enabled) {
@@ -79,8 +90,13 @@ function createWorker({ config, sync, freshness, indexing, outbox, facts = null,
                 briefsTimer = setInterval(briefsTick, config.briefs.intervalMs);
                 briefsTimer.unref();
             }
+            if (marketBriefs && marketBriefs.enabled) {
+                marketTimer = setInterval(() => marketBriefsTick().catch(() => {}), config.marketBriefs.intervalMs);
+                marketTimer.unref();
+                setTimeout(() => marketBriefsTick().catch(() => {}), 5000).unref();
+            }
         },
-        stop() { clearInterval(syncTimer); clearInterval(freshTimer); clearInterval(briefsTimer); },
+        stop() { clearInterval(syncTimer); clearInterval(freshTimer); clearInterval(briefsTimer); clearInterval(marketTimer); },
     };
 }
 

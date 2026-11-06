@@ -102,11 +102,20 @@ function createApi(ctx) {
         offset: Math.max(parseInt(req.query.offset, 10) || 0, 0),
     });
 
-    // The reviewer queue: company pages whose AI context draft waits for a person. Editors only.
+    // The reviewer queue: company pages whose AI context draft waits for a person, and the market brief while it is
+    // unreviewed. Editors only.
     define(router, 'get', '/review-queue', 'getReviewQueue', run(async (req) => {
         if (!(req.viewer.kind === 'user' && req.viewer.editor)) throw new ApiError(403, 'editor.forbidden', 'Only Trade editors review the publication queue');
-        return { items: await context.pendingReviews() };
+        const items = (await context.pendingReviews()).concat(await ctx.marketBriefs.pendingReviews());
+        return { items: items.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)) };
     }));
+
+    // The market brief's review: approving it lets the home page be indexed and changes its label.
+    define(router, 'post', '/market-briefs/:id/review', 'reviewMarketBrief', B('trade.context.publish'), jsonBody, run(async (req) => {
+        if (!(req.viewer.kind === 'user' && req.viewer.editor)) throw new ApiError(403, 'editor.forbidden', 'Only Trade editors review the publication queue');
+        const b = req.body || {};
+        return { brief: await ctx.marketBriefs.review(req.viewer, req.params.id, { decision: b.decision, note: b.note }) };
+    }, 201));
 
     // ── Instruments ─────────────────────────────────────────
 

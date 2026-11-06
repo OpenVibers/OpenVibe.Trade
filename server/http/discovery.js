@@ -68,7 +68,7 @@ function legalPages() {
 }
 
 function createDiscovery(ctx) {
-    const { config, store, instruments, documents, indexing, context, urls, common } = ctx;
+    const { config, store, instruments, documents, indexing, context, marketBriefs, urls, common } = ctx;
     const router = express.Router();
     const abs = urls.abs;
     const xml = (res, body, type = 'application/xml') => res.type(type).set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(body);
@@ -192,7 +192,11 @@ function createDiscovery(ctx) {
     define(router, 'get', '/sitemaps/pages.xml', 'pagesSitemap', async (_req, res) => {
         const newest = (await documents.recent(1))[0];
         const lastmod = newest ? Math.max(newest.first_seen_at, newest.published_at || 0) : null;
-        const decide = (path) => seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: abs(path), wordCount: 0 }, { policy: { minWords: 0 } });
+        // The home's gate includes the market brief: an unreviewed AI brief keeps it out of the sitemap too.
+        const homeFacts = marketBriefs.gateFacts(await marketBriefs.latest());
+        const decide = (path) => seo.evaluate({
+            state: 'published', visibility: 'public', canonicalUrl: abs(path), wordCount: 0, ...(path === '/' ? homeFacts : {}),
+        }, { policy: { minWords: 0 } });
         xml(res, seo.sitemap(PUBLIC_PAGES.filter((p) => p.sitemap).map((p) => ({ loc: abs(p.path), lastmod, decision: decide(p.path) }))).files[0]);
     });
 

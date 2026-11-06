@@ -143,13 +143,20 @@ Trade shows only what a source stated:
   - text that reads as advice is refused, and so is a placeholder run;
   - shown labelled "AI-written, not reviewed by a person". They do not make a page indexable: that still needs a
     person-reviewed context.
+- **Market brief** (`domain/market-briefs.js`, the same OpenVibe.AI `trade.summarize_market_context` workflow): one
+  a day at most (a UTC day, `TRADE_MARKET_BRIEFS=off` turns it off), written only from what Trade stored — the day's
+  filings by form, the euro reference rates, the companies with new filings or SEC figures and aggregate watchlist
+  activity. Every kept point links to its Trade page; no prices are sent. It is shown on the home above the
+  instrument briefs with its date and "AI-written, not yet reviewed by a person", and the home stays noindex through
+  the shared gate until an editor approves it from `GET /api/v1/review-queue` (kind `market_brief`). Without
+  OpenVibe.AI nothing is made and nothing renders.
 - **No prices:** no price feed is configured.
 
 ### Routes (server-rendered, useful without JavaScript)
 
 | Route | What |
 |---|---|
-| `/` | the front page (`server/render/home.js`): a company search and the site's numbers, the latest AI briefs, euro reference rates (each currency's newest rate, its date and source, and the change from the same source's previous rate), new 10-K/10-Q reports, the last 7 days' filings by form (plain names), the newest filings, companies with something new, what is here and six questions (FAQPage JSON-LD); `/?page=N` answers 301 to `/instruments?page=N` |
+| `/` | the front page (`server/render/home.js`): a company search and the site's numbers, the daily market brief, the latest AI briefs, euro reference rates (each currency's newest rate, its date and source, and the change from the same source's previous rate), new 10-K/10-Q reports, the last 7 days' filings by form (plain names), the newest filings, companies with something new, what is here and six questions (FAQPage JSON-LD); `/?page=N` answers 301 to `/instruments?page=N` |
 | `/instruments` | every instrument, the newest filing or figure first (the front page's old list), 50 a page |
 | `/filings`, `/filings?form=` | the newest SEC filings, 50 a page, with the last 7 days' counts by form; one form's list is noindex with `/filings` as its canonical |
 | `/resolve?q=` | resolution; one match → 302 to the instrument |
