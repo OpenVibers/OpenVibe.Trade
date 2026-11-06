@@ -97,14 +97,28 @@ const MARKET_WORKFLOW = 'trade.summarize_market_context';
             assert.strictEqual(aiCalls.length, 1);
         });
 
-        await check('unreviewed: the home is noindex and the brief is in the editor queue with its review path', async () => {
+        await check('unreviewed: the home stays indexable and links to the brief page, which is noindex and in the queue', async () => {
             const home = await t.get('/');
             assert.strictEqual(home.status, 200);
-            assert.ok(home.text.includes('<meta name="robots" content="noindex, nofollow">'), 'the home is noindex while the brief is unreviewed');
-            assert.ok(home.text.includes('AI-written, not yet reviewed by a person'));
-            assert.ok(home.text.indexOf('id="market-brief"') < home.text.indexOf('id="briefs-h"'), 'the market brief is above the instrument briefs');
-            const page = await t.get('/sitemaps/pages.xml');
-            assert.ok(!page.text.includes('<loc>https://openvibe.trade/</loc>'), 'the home is not in the sitemap while unreviewed');
+            assert.ok(home.text.includes('<meta name="robots" content="index, follow">'), 'the home stays indexable while the brief is unreviewed');
+            assert.ok(home.text.includes("Today's market brief (AI-written, not yet reviewed)"), 'the home links to the unreviewed brief');
+            assert.ok(home.text.includes('href="/market/2026-09-22"'), 'the link goes to the brief\'s own page');
+            assert.ok(!home.text.includes('id="market-brief"'), 'the home does not show the unreviewed AI text');
+            assert.ok(!/Quarterly reports led the day/.test(home.text), 'no unreviewed brief text on the home');
+            const pages = await t.get('/sitemaps/pages.xml');
+            assert.ok(pages.text.includes('<loc>https://openvibe.trade/</loc>'), 'the home keeps its sitemap entry');
+            assert.ok(!pages.text.includes('<loc>https://openvibe.trade/market/2026-09-22</loc>'), 'an unreviewed brief page is not in the sitemap');
+
+            const briefPage = await t.get('/market/2026-09-22');
+            assert.strictEqual(briefPage.status, 200);
+            assert.ok(briefPage.text.includes('<meta name="robots" content="noindex, nofollow">'), 'the brief page is noindex until reviewed');
+            assert.ok(briefPage.text.includes('AI-written, not yet reviewed by a person'));
+            assert.ok(briefPage.text.includes('Filing activity led the day'), 'the page shows the brief');
+            assert.ok(!briefPage.text.includes('AI-written, reviewed by a person'));
+
+            const missing = await t.get('/market/2026-01-01');
+            assert.strictEqual(missing.status, 404);
+
             const no = await t.get('/api/v1/review-queue', { as: t.alice });
             assert.strictEqual(no.status, 403);
             const q = await t.get('/api/v1/review-queue', { as: t.editor });
@@ -112,22 +126,35 @@ const MARKET_WORKFLOW = 'trade.summarize_market_context';
             const item = q.json().items.find((i) => i.kind === 'market_brief');
             assert.ok(item, 'the market brief is waiting');
             assert.strictEqual(item.site, 'trade');
+            assert.strictEqual(item.url, '/market/2026-09-22');
+            assert.strictEqual(item.editUrl, '/market/2026-09-22');
             assert.ok(item.reasons.some((x) => x.code === 'ai_generated_unreviewed'));
             assert.match(item.review.path, /^\/api\/v1\/market-briefs\/tmk_[^/]+\/review$/);
         });
 
-        await check('approving as a person indexes the home and clears the queue item', async () => {
+        await check('approving as a person makes the brief page indexable and the home shows it in full', async () => {
             const b = await t.ctx.marketBriefs.latest();
             const no = await t.get(`/api/v1/market-briefs/${b.id}/review`, { as: t.alice, json: { decision: 'approved' } });
             assert.strictEqual(no.status, 403);
             const r = await t.get(`/api/v1/market-briefs/${b.id}/review`, { as: t.editor, json: { decision: 'approved', note: 'Checked against the day\'s filings' } });
             assert.strictEqual(r.status, 201, r.text);
             assert.strictEqual(r.json().brief.reviewed, true);
+
+            const briefPage = await t.get('/market/2026-09-22');
+            assert.ok(briefPage.text.includes('<meta name="robots" content="index, follow">'), 'the reviewed brief page is indexable');
+            assert.ok(briefPage.text.includes('AI-written, reviewed by a person'));
+
             const home = await t.get('/');
-            assert.ok(home.text.includes('<meta name="robots" content="index, follow">'), 'the home is indexable once reviewed');
+            assert.ok(home.text.includes('<meta name="robots" content="index, follow">'), 'the home stays indexable');
+            assert.ok(home.text.includes('id="market-brief"'), 'the home shows the reviewed brief in full');
             assert.ok(home.text.includes('AI-written, reviewed by a person'));
-            const page = await t.get('/sitemaps/pages.xml');
-            assert.ok(page.text.includes('<loc>https://openvibe.trade/</loc>'), 'the home is in the sitemap once reviewed');
+            assert.ok(!home.text.includes("Today's market brief (AI-written, not yet reviewed)"), 'no teaser once a reviewed brief exists');
+            assert.ok(home.text.indexOf('id="market-brief"') < home.text.indexOf('id="briefs-h"'), 'the market brief is above the instrument briefs');
+
+            const pages = await t.get('/sitemaps/pages.xml');
+            assert.ok(pages.text.includes('<loc>https://openvibe.trade/</loc>'), 'the home is still in the sitemap');
+            assert.ok(pages.text.includes('<loc>https://openvibe.trade/market/2026-09-22</loc>'), 'the reviewed brief page joins the sitemap');
+
             const q = await t.get('/api/v1/review-queue', { as: t.editor });
             assert.ok(!q.json().items.some((i) => i.kind === 'market_brief'), 'a reviewed brief leaves the queue');
             const again = await t.get(`/api/v1/market-briefs/${b.id}/review`, { as: t.editor, json: { decision: 'approved' } });
@@ -147,6 +174,23 @@ const MARKET_WORKFLOW = 'trade.summarize_market_context';
             assert.strictEqual(aiCalls.length, 3);
         });
 
+        await check('a newer unreviewed brief never replaces the reviewed one on the home', async () => {
+            assert.strictEqual((await t.ctx.marketBriefs.latestReviewed()).date, '2026-09-22');
+            assert.strictEqual((await t.ctx.marketBriefs.latestUnreviewed()).date, '2026-09-23');
+            const home = await t.get('/');
+            assert.ok(home.text.includes('<meta name="robots" content="index, follow">'));
+            assert.ok(home.text.includes('id="market-brief"'));
+            assert.ok(home.text.includes('<time datetime="2026-09-22">2026-09-22</time>'), 'the reviewed brief, with its date');
+            assert.ok(!home.text.includes("Today's market brief (AI-written, not yet reviewed)"), 'no teaser while a reviewed brief exists');
+            assert.ok(!home.text.includes('<time datetime="2026-09-23">'), 'not the unreviewed one\'s date');
+            const nextPage = await t.get('/market/2026-09-23');
+            assert.strictEqual(nextPage.status, 200);
+            assert.ok(nextPage.text.includes('<meta name="robots" content="noindex, nofollow">'), 'the newer brief\'s own page is noindex');
+            const pages = await t.get('/sitemaps/pages.xml');
+            assert.ok(pages.text.includes('<loc>https://openvibe.trade/market/2026-09-22</loc>'));
+            assert.ok(!pages.text.includes('<loc>https://openvibe.trade/market/2026-09-23</loc>'));
+        });
+
         const t2 = await boot({ ai: { enabled: false, WORKFLOW: MARKET_WORKFLOW, async run() { throw new Error('OpenVibe.AI is not configured'); } }, log: quiet });
         try {
             await t2.ctx.store.db.prepare(`INSERT INTO trade_market_briefs (id, brief_date, summary, points, cites, gaps, as_of, inputs_hash, run_id, model, trigger, created_at)
@@ -158,7 +202,9 @@ const MARKET_WORKFLOW = 'trade.summarize_market_context';
                 const r = await t2.get('/');
                 assert.strictEqual(r.status, 200);
                 assert.ok(!r.text.includes('id="market-brief"'), 'no market brief section');
+                assert.ok(!r.text.includes("Today's market brief"), 'no link to a brief');
                 assert.ok(r.text.includes('<meta name="robots" content="index, follow">'), 'the stale row changes nothing');
+                assert.strictEqual((await t2.get('/market/2026-09-22')).status, 404, 'an old brief page is not served without OpenVibe.AI');
             });
         } finally {
             await t2.close();

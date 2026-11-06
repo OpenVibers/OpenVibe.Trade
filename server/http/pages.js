@@ -68,8 +68,9 @@ function createPages(ctx) {
         const p = parseInt(req.query.page, 10);
         if (p > 1) { common.vary(res); res.set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })); return res.redirect(301, `/instruments?page=${p}`); }
         const now = ctx.store.now();
-        const [kinds, docStats, obsStats, briefStats, briefs, marketBrief, rateRows, reportDocs, forms, recentDocs, movers] = await Promise.all([
-            instruments.countByKind(), documents.stats(now - DAY), observations.stats(), ctx.briefs.stats(), ctx.briefs.recent(6), ctx.marketBriefs.latest(),
+        const [kinds, docStats, obsStats, briefStats, briefs, marketBrief, marketBriefPending, rateRows, reportDocs, forms, recentDocs, movers] = await Promise.all([
+            instruments.countByKind(), documents.stats(now - DAY), observations.stats(), ctx.briefs.stats(), ctx.briefs.recent(6),
+            ctx.marketBriefs.latestReviewed(), ctx.marketBriefs.latestUnreviewed(),
             observations.rates(), documents.recentOf(['10-K', '10-Q', '20-F', '40-F'], { limit: 8 }), documents.formCounts(now - 7 * DAY),
             documents.recent(8), instruments.page({ limit: 8, offset: 0 }),
         ]);
@@ -80,14 +81,13 @@ function createPages(ctx) {
                 companies: (kinds.equity || 0) + (kinds.fund || 0), currencies: kinds.currency || 0, instruments: Object.values(kinds).reduce((a, b) => a + b, 0),
                 filings: docStats.total, filingsDay: docStats.day, figureCompanies: obsStats.companies, briefs: briefStats.total,
             },
-            marketBrief, briefs, rates, reports: await withInstruments(reportDocs), forms, recent: await withInstruments(recentDocs),
+            // The home shows only a reviewed brief; while none is reviewed it links to the unreviewed one's page.
+            marketBrief, marketBriefPending: marketBrief ? null : marketBriefPending,
+            briefs, rates, reports: await withInstruments(reportDocs), forms, recent: await withInstruments(recentDocs),
             movers: { instruments: movers.instruments, ...await headlines(movers.instruments, now) }, sync: await sync.state(), faq,
         };
         common.page(req, res, {
-            title: 'SEC filings, company figures, AI briefs', canonical: urls.abs('/'),
-            // An unreviewed market brief is AI-written content on the home: the same gate keeps the page noindex
-            // (ai_generated_unreviewed) until a person approves it.
-            decision: seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: urls.abs('/'), wordCount: 0, ...ctx.marketBriefs.gateFacts(marketBrief) }, { policy: { minWords: 0 } }),
+            title: 'SEC filings, company figures, AI briefs', canonical: urls.abs('/'), decision: listing('/'),
             description: 'SEC filings as they arrive, the figures inside them, euro reference rates, a daily market brief and AI briefs that cite every number, for about 8,000 US companies. Information only.',
             // The home page carries the site's ai-summary meta and WebPage JSON-LD (v1.3.0 forwards it).
             summary: SITE_SUMMARY, styles: [showcase.STYLESHEET], bodyClass: 'home', feeds: FEEDS,
@@ -96,6 +96,20 @@ function createPages(ctx) {
                 home.faqJsonLd(faq),
             ],
             body: home.homePage(data, urls),
+        });
+    });
+
+    // One market brief's own page. Its indexability is the brief's alone: unreviewed AI content is noindex through
+    // the same publishing gate as instrument context; a person's approval makes it indexable.
+    define(router, 'get', '/market/:date', 'showMarketBrief', async (req, res) => {
+        const brief = /^\d{4}-\d{2}-\d{2}$/.test(String(req.params.date)) ? await ctx.marketBriefs.get(req.params.date) : null;
+        if (!brief) return common.notFound(req, res);
+        const canonical = urls.abs(`/market/${brief.date}`);
+        common.page(req, res, {
+            title: `Market brief, ${brief.date}`, canonical,
+            decision: seo.evaluate({ state: 'published', visibility: 'public', canonicalUrl: canonical, wordCount: 0, ...ctx.marketBriefs.gateFacts(brief) }, { policy: { minWords: 0 } }),
+            description: `What changed across the US market on ${brief.date}, from the filings, figures and euro reference rates on OpenVibe.Trade. Written by OpenVibe.AI.`,
+            body: home.marketBriefPage(brief),
         });
     });
 

@@ -17,10 +17,12 @@
  * as a gap), and the text is refused if it reads as advice. One brief per UTC day at most: the daily cap is the
  * brief_date unique key, so a restart or a reader never makes a second AI call that day.
  *
- * The brief is AI-written and not reviewed by a person until an editor approves it (trade_market_brief_reviews,
- * append-only). The home page's indexability runs through the shared gate (openvibe-publishing/seo) with the
- * brief's authorship, so an unreviewed brief keeps the home noindex; approving it lets the home be indexed.
- * Without OpenVibe.AI (no URL or no client secret) nothing is made, nothing is shown and nothing fails.
+ * The brief is AI-written until an editor approves it (trade_market_brief_reviews, append-only). Each brief has its
+ * own page at /market/<YYYY-MM-DD>, whose own indexability runs through the shared gate
+ * (openvibe-publishing/seo) with the brief's authorship: unreviewed → noindex, reviewed → indexable. The home never
+ * changes indexability because of a brief: it shows the latest reviewed one in full and, while none is reviewed,
+ * one line linking to the unreviewed page. Without OpenVibe.AI (no URL or no client secret) nothing is made, nothing
+ * is shown and nothing fails.
  */
 const crypto = require('crypto');
 const { ADVICE_RE } = require('./context');
@@ -41,6 +43,13 @@ function createMarketBriefs({ store, config, ctx, ai, log = console }) {
         byDate: db.prepare('SELECT * FROM trade_market_briefs WHERE brief_date = ?'),
         byId: db.prepare('SELECT * FROM trade_market_briefs WHERE id = ?'),
         latest: db.prepare('SELECT * FROM trade_market_briefs ORDER BY brief_date DESC, created_at DESC, id DESC LIMIT 1'),
+        latestReviewed: db.prepare(`SELECT b.* FROM trade_market_briefs b JOIN trade_market_brief_reviews r ON r.brief_id = b.id
+                                    WHERE r.decision = 'approved' ORDER BY b.brief_date DESC, b.created_at DESC, b.id DESC LIMIT 1`),
+        latestUnreviewed: db.prepare(`SELECT b.* FROM trade_market_briefs b LEFT JOIN trade_market_brief_reviews r ON r.brief_id = b.id
+                                      WHERE r.id IS NULL ORDER BY b.brief_date DESC, b.created_at DESC, b.id DESC LIMIT 1`),
+        // For the pages sitemap: the reviewed briefs' own /market/<date> pages, no review lookup per row.
+        reviewed: db.prepare(`SELECT b.brief_date, b.created_at FROM trade_market_briefs b JOIN trade_market_brief_reviews r ON r.brief_id = b.id
+                              WHERE r.decision = 'approved' ORDER BY b.brief_date DESC LIMIT ?`),
         latestReview: db.prepare('SELECT * FROM trade_market_brief_reviews WHERE brief_id = ? ORDER BY id DESC LIMIT 1'),
         insert: db.prepare(`INSERT INTO trade_market_briefs (id, brief_date, summary, points, cites, gaps, as_of, inputs_hash, run_id, model, trigger, created_at)
                             VALUES (@id, @brief_date, @summary, @points, @cites, @gaps, @as_of, @inputs_hash, @run_id, @model, @trigger, @created_at)`),
@@ -273,7 +282,39 @@ function createMarketBriefs({ store, config, ctx, ai, log = console }) {
         return brief.status === 'rejected' ? null : brief;
     }
 
-    /** The gate facts for the home page: an unreviewed AI brief keeps it noindex. */
+    /** The latest brief a person approved: the only one the home shows in full. */
+    async function latestReviewed() {
+        if (!enabled) return null;
+        const row = await q.latestReviewed.get();
+        if (!row) return null;
+        const brief = await shape(row);
+        return brief.reviewed ? brief : null;
+    }
+
+    /** The latest brief still waiting for a person: the home links to it but never shows it. */
+    async function latestUnreviewed() {
+        if (!enabled) return null;
+        const row = await q.latestUnreviewed.get();
+        return row ? await shape(row) : null;
+    }
+
+    /** One brief by its UTC date, for /market/<YYYY-MM-DD>; rejected briefs are not shown. */
+    async function get(date) {
+        if (!enabled) return null;
+        const row = await q.byDate.get(String(date || ''));
+        if (!row) return null;
+        const brief = await shape(row);
+        return brief.status === 'rejected' ? null : brief;
+    }
+
+    /** The reviewed brief pages for the pages sitemap: [{ date, created_at }], newest first. */
+    async function reviewed(limit = 100) {
+        if (!enabled) return [];
+        const n = Math.min(Math.max(Number(limit) || 100, 1), 500);
+        return (await q.reviewed.all(n)).map((r) => ({ date: r.brief_date, created_at: iso(r.created_at) }));
+    }
+
+    /** The gate facts for a brief's own page: unreviewed AI content is noindex. */
     const gateFacts = (brief) => (brief ? { authorship: { mode: 'ai', reviewed: brief.reviewed } } : {});
 
     /** The market brief waiting for a person, for GET /api/v1/review-queue. Only the latest one is shown. */
@@ -285,7 +326,7 @@ function createMarketBriefs({ store, config, ctx, ai, log = console }) {
             site: 'trade', kind: 'market_brief', id: row.id,
             title: `Market brief, ${row.brief_date}`,
             revision: 1, state: 'draft',
-            url: '/#market-brief', editUrl: '/#market-brief',
+            url: `/market/${row.brief_date}`, editUrl: `/market/${row.brief_date}`,
             createdAt: iso(row.created_at),
             reasons: [{ code: 'ai_generated_unreviewed', effect: 'noindex', detail: 'the market brief is an AI draft', text: 'AI-written and not yet reviewed by a person.' }],
             review: { method: 'POST', path: `/api/v1/market-briefs/${encodeURIComponent(row.id)}/review` },
@@ -304,7 +345,7 @@ function createMarketBriefs({ store, config, ctx, ai, log = console }) {
         return await shape(row);
     }
 
-    return { enabled, WORKFLOW: ai.WORKFLOW, make, tick, latest, gateFacts, pendingReviews, review, inputsFor };
+    return { enabled, WORKFLOW: ai.WORKFLOW, make, tick, latest, latestReviewed, latestUnreviewed, get, reviewed, gateFacts, pendingReviews, review, inputsFor };
 }
 
 module.exports = { createMarketBriefs };
