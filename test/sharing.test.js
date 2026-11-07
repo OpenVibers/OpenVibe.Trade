@@ -73,7 +73,7 @@ const { createPrivate } = require('../server/http/private');
             assert.strictEqual(other.status, 404);
             assert.ok(!other.text.includes('Semis'), 'the list is never named to somebody else');
             assert.strictEqual((await t.get(`/watchlists/${id}`)).status, 404);
-            assert.strictEqual((await t.get(`/api/v1/watchlists/${id}`)).status, 404);
+            assert.strictEqual((await t.get(`/api/v1/watchlists/${id}`)).status, 401, 'the API needs a signed-in caller, as before');
         });
 
         await check('Anyone with the link reads the page and the API, and cannot edit', async () => {
@@ -87,7 +87,9 @@ const { createPrivate } = require('../server/http/private');
             assert.ok(!guest.text.includes('data-ov-share-sheet'), 'a reader gets no Share sheet');
             assert.ok(!guest.text.includes('action="/watchlists/item"'), 'a reader gets no add form');
             assert.ok(!guest.text.includes('Delete this watchlist'));
-            const api = await t.get(`/api/v1/watchlists/${id}`);
+            // The API needs a signed-in caller; a member of the link audience then reads it.
+            assert.strictEqual((await t.get(`/api/v1/watchlists/${id}`)).status, 401);
+            const api = await t.get(`/api/v1/watchlists/${id}`, { as: bo });
             assert.strictEqual(api.status, 200);
             assert.strictEqual(api.json().can_edit, false);
             assert.strictEqual((await t.get(`/api/v1/watchlists/${id}/items/BETA`, { method: 'PUT', as: bo, json: {} })).status, 404);

@@ -226,7 +226,11 @@ function createApi(ctx) {
     define(router, 'post', '/watchlists', 'createWatchlist', guard(C.WATCHLIST_CREATE), B('trade.watchlist.create'), jsonBody, run(async (req) => ({ watchlist: await watchlists.dto(await watchlists.create(owner(req), req.body || {})) }), 201));
 
     define(router, 'get', '/watchlists/:id', 'getWatchlist', guard(C.WATCHLIST_READ), run(async (req) => {
-        const out = await watchlists.mustView(req.viewer, req.params.id);
+        const v = req.viewer;
+        // Anonymous callers get the same 401 for an existing list as for a missing one; a person or a service acting
+        // for one gets the same 404 for a private or Specific-people list as for one that does not exist.
+        if (!((v.kind === 'user' || v.kind === 'service') && v.subject)) throw new ApiError(401, 'auth.required', 'Sign in with OpenVibe');
+        const out = await watchlists.mustView(v, req.params.id);
         return { watchlist: await watchlists.dto(out.list), can_edit: out.canEdit };
     }));
 
