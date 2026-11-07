@@ -135,10 +135,11 @@ const marketBriefLabel = (b) => (b.reviewed ? 'AI-written, reviewed by a person'
 
 /** A brief's text, every point linked to the Trade page it rests on, its sources and its gaps. */
 function marketBriefBody(b) {
-    const cites = (list) => list.map((c) => html`<a class="cite" href="${c.url}">${c.label}</a>`);
+    // Separated, so the links never run together into one unbreakable word (11-07: '10-Q filings8-K filings…').
+    const cites = (list) => list.map((c, i) => html`${i ? ' · ' : ''}<a class="cite" href="${c.url}">${c.label}</a>`);
     return html`${b.summary ? html`<p>${b.summary}</p>` : ''}
 ${b.points.length ? html`<ul>${b.points.map((p) => html`<li>${p.text} ${cites(p.cites)}</li>`)}</ul>` : ''}
-${b.cites.length ? html`<p class="muted tr-small">Sources: ${b.cites.map((c) => html`<a href="${c.url}">${c.label}</a>`)}</p>` : ''}
+${b.cites.length ? html`<p class="muted tr-small">Sources: ${b.cites.map((c, i) => html`${i ? ', ' : ''}<a href="${c.url}">${c.label}</a>`)}</p>` : ''}
 <p class="muted">${b.disclaimer}${b.model ? html` (${b.model})` : ''}</p>
 ${b.gaps.length ? html`<details><summary>What the sources did not support</summary><ul>${b.gaps.map((g) => html`<li>${g}</li>`)}</ul></details>` : ''}`;
 }
