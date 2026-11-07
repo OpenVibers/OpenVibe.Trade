@@ -59,6 +59,33 @@ const { boot, check, done } = require('./helpers/boot');
         assert.strictEqual((await t.get(`/api/v1/watchlists/${wlId}`)).status, 401, 'anonymous API');
     });
 
+    await check('a Specific-people list answers a non-member exactly as a missing list does', async () => {
+        const carol = t.network.addUser('carol');
+        const made = await t.get('/watchlists', form(t.alice, { name: 'Shared plans' }));
+        assert.strictEqual(made.status, 303);
+        const shared = (await t.ctx.watchlists.forOwner(t.alice.subject)).find((w) => w.name === 'Shared plans');
+        const call = (p, o = {}) => t.get(p, { ...o, headers: { 'x-requested-with': 'ov-share', ...(o.headers || {}) } });
+        const first = await call(`/api/v1/watchlist/${shared.id}/share`, { as: t.alice });
+        assert.strictEqual(first.status, 200, first.text);
+        const saved = await call(`/api/v1/watchlist/${shared.id}/share`, {
+            as: t.alice, method: 'PUT', json: { audience: 'people', members: [{ name: 'carol', role: 'viewer' }] },
+            headers: { 'x-requested-with': 'ov-share', 'if-match': first.headers.get('etag') },
+        });
+        assert.strictEqual(saved.status, 200, saved.text);
+        const hidden = await t.get(`/api/v1/watchlists/${shared.id}`, { as: t.bob });
+        const missing = await t.get('/api/v1/watchlists/wl_01J0000000000000000000000', { as: t.bob });
+        assert.strictEqual(hidden.status, 404);
+        assert.strictEqual(hidden.status, missing.status);
+        assert.strictEqual(hidden.json().code, missing.json().code);
+        assert.strictEqual(hidden.json().detail, missing.json().detail);
+        assert.strictEqual(hidden.json().title, missing.json().title);
+        assert.ok(!hidden.text.includes('Shared plans'), 'nothing about the list');
+        assert.strictEqual((await t.get(`/api/v1/watchlists/${shared.id}`)).status, 401, 'anonymous API');
+        assert.strictEqual((await t.get(`/watchlists/${shared.id}`, { as: carol })).status, 200, 'the member reads it');
+        // Leave alice with the one list the later checks count.
+        assert.strictEqual((await t.get(`/api/v1/watchlists/${shared.id}`, { method: 'DELETE', as: t.alice })).status, 200);
+    });
+
     await check('the API answers the owner, privately', async () => {
         const r = await t.get('/api/v1/watchlists', { as: t.alice });
         assert.strictEqual(r.status, 200);
