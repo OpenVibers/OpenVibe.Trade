@@ -426,16 +426,20 @@ ${sourcesTable(sources, { caption: 'Sources and their freshness, computed with t
 
 // ── Watchlists (private) ─────────────────────────────────────────────────────
 
-function watchlistsPage({ viewer, lists, rules, deliveries, csrf, loginHref, notice: n }) {
+function watchlistsPage({ viewer, lists, rules, deliveries, csrf, loginHref, defaultAudience = 'private', notice: n }) {
     if (!viewer || viewer.kind !== 'user' || !viewer.subject) {
-        return html`<h1>Watchlists</h1><p>Watchlists and alerts are private to your OpenVibe account.</p><p><a class="sc-btn sc-primary" href="${loginHref}">Sign in to see yours</a></p>`;
+        return html`<h1>Watchlists</h1><p>Watchlists and alerts are private to your OpenVibe account. <a href="${loginHref}">Sign in</a> to see yours.</p>`;
     }
+    const audienceText = { private: 'Only me', people: 'Specific people', link: 'Anyone with the link', public: 'Everyone' };
+    const defaultOptions = ['private', 'people', 'link']
+        .map((a) => html`<option value="${a}"${a === defaultAudience ? ' selected' : ''}>${audienceText[a]}</option>`);
     const listHtml = lists.map((w) => html`<section class="card" aria-label="${w.name}">
-<h2>${w.name}</h2>
+<h2><a href="/watchlists/${w.id}">${w.name}</a></h2>
 ${w.items.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Note</th><th scope="col"></th></tr></thead><tbody>
 ${w.items.map((it) => html`<tr><td><a href="${new URL(it.instrument.url).pathname}">${it.instrument.symbol}</a></td><td>${it.instrument.name}</td><td>${it.note || ''}</td>
 <td><form method="post" action="/watchlists/item/remove" class="inline">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${w.id}"><input type="hidden" name="symbol" value="${it.instrument.symbol}"><button type="submit">Remove</button></form></td></tr>`)}
 </tbody></table>` : html`<p class="empty">Empty. Add instruments from their pages or below.</p>`}
+<p><button type="button" class="btn" data-ov-share-sheet data-kind="watchlist" data-id="${w.id}" data-title="${w.name}">Share</button></p>
 <form method="post" action="/watchlists/item" class="inline-form">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${w.id}">
   <label>Add by ticker, CIK or name <input name="q" maxlength="200" required></label> <button type="submit">Add</button></form>
 <form method="post" action="/watchlists/rename" class="inline-form">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${w.id}">
@@ -449,9 +453,16 @@ ${w.items.map((it) => html`<tr><td><a href="${new URL(it.instrument.url).pathnam
     const delRows = deliveries.map((x) => html`<li>${when(x.created_at)} — ${x.trigger.kind === 'observation'
         ? html`${x.trigger.metric} = ${x.trigger.value} ${x.trigger.unit}, observed ${when(x.trigger.observed_at)} (${x.trigger.source_key})`
         : html`${x.trigger.form_type ? `${x.trigger.form_type}: ` : ''}${x.trigger.title || 'document'}, ${x.trigger.published_at ? html`published ${when(x.trigger.published_at)}` : 'no date stated'}`}</li>`);
-    return html`<h1>Your watchlists <span class="badge">private</span></h1>
+    return html`<h1>Your watchlists <span class="badge">Only me by default</span></h1>
 <p class="muted">Only you can see this page. It is never cached by shared caches, indexed or listed anywhere.</p>
 ${notice(n)}
+<section class="card" aria-labelledby="new-list-h">
+<h2 id="new-list-h">New watchlists</h2>
+<form method="post" action="/watchlists/defaults" class="inline-form">${csrfField(csrf)}
+  <label>Who can open a new watchlist <select name="audience">${defaultOptions}</select></label>
+  <label><input type="checkbox" name="apply_all" value="1"> Apply to all my existing watchlists</label>
+  <button type="submit">Save</button></form>
+<p class="muted">A watchlist's Share button changes just that one. Your watchlists are never listed; a shared list is readable only by whoever holds the link or the people you add.</p></section>
 ${listHtml}
 <form method="post" action="/watchlists" class="card">${csrfField(csrf)}
   <label for="wl-name">New watchlist</label><input id="wl-name" name="name" maxlength="80" required>
@@ -461,6 +472,40 @@ ${rules.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col
         : html`<p class="empty">No alerts. Create one from an instrument’s page.</p>`}
 <h2>Recent alert deliveries</h2>
 ${deliveries.length ? html`<ul>${delRows}</ul>` : html`<p class="empty">None yet.</p>`}`;
+}
+
+// ── One watchlist (its owner's, or a shared one) ────────────────────────────
+
+const WATCHLIST_AUDIENCES = { public: 'Everyone', link: 'Anyone with the link', people: 'Specific people', private: 'Only me' };
+
+function watchlistPage({ list, items, mine = false, canEdit = false, audience = 'private', csrf, notice: n }) {
+    const who = WATCHLIST_AUDIENCES[audience] || 'Only me';
+    const removeCell = (it) => canEdit
+        ? html`<td><form method="post" action="/watchlists/item/remove" class="inline">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${list.id}"><input type="hidden" name="symbol" value="${it.symbol}"><button type="submit">Remove</button></form></td>`
+        : '';
+    return html`<h1>${list.name}</h1>
+<p class="muted"><span class="badge">${who}</span>${mine ? '' : ' · you are reading a shared watchlist'}${canEdit && !mine ? ' · you can add and remove instruments' : ''}</p>
+${notice(n)}
+${mine ? html`<p><button type="button" class="btn" data-ov-share-sheet data-kind="watchlist" data-id="${list.id}" data-title="${list.name}">Share</button></p>` : ''}
+${items.length ? html`<table tabindex="0" class="data"><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Note</th><th scope="col"></th></tr></thead><tbody>
+${items.map((it) => html`<tr><td><a href="/i/${encodeURIComponent(it.symbol)}">${it.symbol}</a></td><td>${it.name}</td><td>${it.note || ''}</td>${removeCell(it)}</tr>`)}
+</tbody></table>` : html`<p class="empty">Empty.</p>`}
+${canEdit ? html`<form method="post" action="/watchlists/item" class="inline-form">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${list.id}">
+  <label>Add by ticker, CIK or name <input name="q" maxlength="200" required></label> <button type="submit">Add</button></form>` : ''}
+${mine ? html`<form method="post" action="/watchlists/rename" class="inline-form">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${list.id}">
+  <label>Rename <input name="name" maxlength="80" value="${list.name}" required></label> <button type="submit">Rename</button></form>
+<form method="post" action="/watchlists/delete" class="inline-form">${csrfField(csrf)}<input type="hidden" name="watchlist_id" value="${list.id}"><button type="submit" class="danger">Delete this watchlist</button></form>` : ''}
+<p class="muted"><a href="/watchlists">Your watchlists</a> · Information only — not investment advice; no trading here.</p>`;
+}
+
+/**
+ * The page a person not on a Specific-people watchlist's list sees: the audience, never the list's name or the
+ * instruments on it. openvibe-shared draws the card from this markup (no inline script).
+ */
+function watchlistGate({ id, signedInAs = '', signInUrl = '/auth/login' }) {
+    return html`<h1>A watchlist shared with specific people</h1>
+<p>Sign in with the OpenVibe account it was shared with, or ask its owner for access.</p>
+<div id="watchlist-share-gate" data-ov-share-gate data-kind="watchlist" data-id="${id}" data-signed-in-as="${signedInAs}" data-sign-in-url="${signInUrl}">This is shared with specific people. Sign in with the OpenVibe account it was shared with, or ask its owner for access.</div>`;
 }
 
 // ── Editor ───────────────────────────────────────────────────────────────────
@@ -570,4 +615,4 @@ const observationStyles = `
 @media (min-width: 700px) { .obs-item { padding: 11px 14px 8px; } .obs-value { font-size: 1.6rem; } }
 `;
 
-module.exports = { observationStyles, instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };
+module.exports = { observationStyles, instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, watchlistPage, watchlistGate, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };

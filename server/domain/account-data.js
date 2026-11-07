@@ -66,6 +66,31 @@ async function extraErase(t, subjects, counts) {
 function create({ db, log = console } = {}) {
     return createAccountData({
         db, service: 'trade', tables: TABLES, extraExport, extraErase, log,
+        /**
+         * A share row names its owner and its members by canonical subject, which a table map cannot cover: the
+         * watchlist's own rows go, and so must its share row and everyone it named, or a deleted account would
+         * linger in somebody else's member list. Children first: members, transfers and requests point at shares.
+         */
+        extraErase: async (t, subjects, counts) => {
+            await extraErase(t, subjects, counts);
+            for (const subject of subjects) {
+                const id = String(subject).replace(/^user:/, '');
+                await t.exec('DELETE FROM trade_share_defaults WHERE subject = $1', [id]);
+                await t.exec("DELETE FROM share_members WHERE service='trade' AND subject->>'id' = $1", [id]);
+                await t.exec("DELETE FROM share_transfers WHERE service='trade' AND (from_subject->>'id' = $1 OR to_subject->>'id' = $1)", [id]);
+                await t.exec("DELETE FROM share_access_requests WHERE service='trade' AND subject->>'id' = $1", [id]);
+            }
+            for (const subject of subjects) {
+                const id = String(subject).replace(/^user:/, '');
+                const owned = await t.many("SELECT kind, resource_id FROM shares WHERE service='trade' AND owner_subject->>'id' = $1", [id]);
+                for (const row of owned) {
+                    await t.exec("DELETE FROM share_members WHERE service='trade' AND kind=$1 AND resource_id=$2", [row.kind, row.resource_id]);
+                    await t.exec("DELETE FROM share_transfers WHERE service='trade' AND kind=$1 AND resource_id=$2", [row.kind, row.resource_id]);
+                    await t.exec("DELETE FROM share_access_requests WHERE service='trade' AND kind=$1 AND resource_id=$2", [row.kind, row.resource_id]);
+                    await t.exec("DELETE FROM shares WHERE service='trade' AND kind=$1 AND resource_id=$2", [row.kind, row.resource_id]);
+                }
+            }
+        },
         note: 'Instruments, context text and observations you contributed stay without your name; reviews you approved stay attributed.',
     });
 }

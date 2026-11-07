@@ -225,7 +225,10 @@ function createApi(ctx) {
 
     define(router, 'post', '/watchlists', 'createWatchlist', guard(C.WATCHLIST_CREATE), B('trade.watchlist.create'), jsonBody, run(async (req) => ({ watchlist: await watchlists.dto(await watchlists.create(owner(req), req.body || {})) }), 201));
 
-    define(router, 'get', '/watchlists/:id', 'getWatchlist', guard(C.WATCHLIST_READ), run(async (req) => ({ watchlist: await watchlists.dto(await watchlists.mustOwn(owner(req), req.params.id)) })));
+    define(router, 'get', '/watchlists/:id', 'getWatchlist', guard(C.WATCHLIST_READ), run(async (req) => {
+        const out = await watchlists.mustView(req.viewer, req.params.id);
+        return { watchlist: await watchlists.dto(out.list), can_edit: out.canEdit };
+    }));
 
     define(router, 'patch', '/watchlists/:id', 'renameWatchlist', guard(C.WATCHLIST_UPDATE), B('trade.watchlist.update'), jsonBody, run(async (req) => {
         const w = await watchlists.mustOwn(owner(req), req.params.id);

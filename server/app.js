@@ -42,6 +42,7 @@ const { createObservations } = require('./domain/observations');
 const { createDocuments } = require('./domain/documents');
 const { createAlerts } = require('./domain/alerts');
 const { createWatchlists } = require('./domain/watchlists');
+const { createSharing } = require('./sharing');
 const { createContext } = require('./domain/context');
 const { createIndexing } = require('./domain/indexing');
 const { createReading } = require('./domain/reading');
@@ -93,6 +94,8 @@ async function createApp(opts = {}) {
     ctx.alerts = createAlerts({ store, config, ctx });
     ctx.observations = createObservations({ store, ctx });
     ctx.documents = createDocuments({ store, ctx });
+    // The one sharing system (design 2026-11-06): a watchlist is its owner's until the Share sheet says otherwise.
+    ctx.sharing = opts.sharing || createSharing({ db: store.db, config, fetchImpl, log });
     ctx.watchlists = createWatchlists({ store, config, ctx });
     ctx.context = createContext({ store, config, ctx });
     ctx.indexing = createIndexing({ store, config, ctx, indexnow });
@@ -234,6 +237,27 @@ async function createApp(opts = {}) {
     }));
 
     // ── API ─────────────────────────────────────────────────
+    // ── /api/v1/watchlist/:id/share — the one Share sheet's API (openvibe-sdk/share) ──
+    // GET/PUT .../share, .../share/requests, .../share/transfer[/accept|decline|cancel], GET /api/v1/share/people
+    // and /api/v1/shared-with-me. Access is still decided by canView on every read path; the router answers only
+    // its own paths.
+    {
+        const shareApi = express.Router();
+        shareApi.use(ctx.viewers.middleware());
+        shareApi.use(ctx.sharing.shares.router({
+            service: 'trade',
+            authenticate: (req) => ctx.sharing.shareViewer(req.viewer),
+            describe: ctx.sharing.describe,
+        }));
+        const SHARE_PATH = /^\/api\/v1\/(?:shared-with-me$|share\/people$|[^/]+\/[^/]+\/share(?:\/|$))/;
+        app.use((req, res, next) => (SHARE_PATH.test(req.path) ? shareApi(req, res, next) : next()));
+    }
+    // Expire members and transfers and send queued share events/notifications. Unref'd: it never holds a test open.
+    if (opts.startSharingWorker !== false) {
+        const timer = setInterval(() => { ctx.sharing.work().catch(() => { /* logged inside */ }); }, 15_000);
+        if (timer.unref) timer.unref();
+        app.locals.sharingTimer = timer;
+    }
     app.use('/api/v1', rateLimit({ windowMs: 60_000, max: 240, standardHeaders: true, legacyHeaders: false }), createApi(ctx));
 
     // ── Pages (the viewer is resolved for browsers only; service tokens are not identities here) ──

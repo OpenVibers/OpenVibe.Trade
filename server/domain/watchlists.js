@@ -41,6 +41,26 @@ function createWatchlists({ store, config, ctx }) {
             if (!w || !subject || w.owner_subject !== subject) throw new ApiError(404, 'watchlist.not_found', 'No such watchlist');
             return w;
         },
+        /**
+         * A watchlist a viewer may read: the owner's, or one shared with them (design 2026-11-06, step 6). A missing
+         * share row falls back to the old rule — the owner alone. Returns null when the list does not exist or is not
+         * this viewer's to see; the caller answers 404.
+         */
+        async view(viewer, id) {
+            const w = await q.byId.get(String(id || ''));
+            if (!w) return null;
+            const subject = viewer && (viewer.kind === 'user' || viewer.kind === 'service') ? viewer.subject : null;
+            const mine = Boolean(subject && w.owner_subject === subject);
+            if (mine) return { list: w, mine: true, canEdit: true };
+            if (!ctx.sharing) return null;
+            if (!await ctx.sharing.canView(viewer, w.id)) return null;
+            return { list: w, mine: false, canEdit: await ctx.sharing.canEdit(viewer, w.id) };
+        },
+        async mustView(viewer, id) {
+            const out = await api.view(viewer, id);
+            if (!out) throw new ApiError(404, 'watchlist.not_found', 'No such watchlist');
+            return out;
+        },
         forOwner: async (subject) => (subject ? await q.forOwner.all(subject) : []),
         items: async (w) => await q.items.all(w.id),
 
@@ -50,6 +70,11 @@ function createWatchlists({ store, config, ctx }) {
             if ((await q.count.get(subject)).n >= config.limits.watchlistsPerSubject) throw new ApiError(429, 'watchlist.limit', `At most ${config.limits.watchlistsPerSubject} watchlists`);
             const id = newId('wl', store.now());
             await unique(async () => await q.insert.run(id, subject, name, store.now(), store.now()));
+            // A new watchlist starts at the person's default (design rule 1); its Share sheet changes just this one.
+            if (ctx.sharing) {
+                const audience = await ctx.sharing.defaultOf(subject);
+                await ctx.sharing.register(subject, id, audience);
+            }
             return await q.byId.get(id);
         },
 
@@ -59,7 +84,7 @@ function createWatchlists({ store, config, ctx }) {
             return await q.byId.get(w.id);
         },
 
-        async remove(w) { return await store.tx(async () => { await db.prepare('DELETE FROM trade_watchlist_items WHERE watchlist_id = ?').run(w.id); return (await q.remove.run(w.id)).changes > 0; }); },
+        async remove(w) { return await store.tx(async () => { await db.prepare('DELETE FROM trade_watchlist_items WHERE watchlist_id = ?').run(w.id); const removed = (await q.remove.run(w.id)).changes > 0; if (removed && ctx.sharing) await ctx.sharing.forget(w.id); return removed; }); },
 
         async add(w, instrument, note = null) {
             if (!instrument) throw new ApiError(404, 'instrument.not_found', 'No such instrument');
