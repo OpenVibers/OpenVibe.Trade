@@ -41,11 +41,18 @@ function createWorker({ config, sync, freshness, indexing, outbox, facts = null,
                 }
             }
             if (briefs && briefs.enabled && config.briefs.perTick > 0) {
+                // First the batches that already answered (or fell due): a restart loses nothing, because the
+                // pending run ids are rows in trade_ai_brief_jobs, not promises in this process.
+                const collected = await briefs.collect(config.briefs.perTick);
+                out.briefs += collected.briefs;
+                out.failed += collected.failed;
+                // Then the companies whose report brought new numbers, within the hourly budget. A batch that
+                // was just started counts as this hour's work, so room is read after the collection.
                 const room = Math.max(0, Math.min(config.briefs.perTick, config.briefs.perHour - await briefs.lastHour()));
                 for (const i of room ? await briefs.due(room) : []) {
                     try {
                         const r = await briefs.make(i, { trigger: 'report' });
-                        if (r.created) out.briefs++;
+                        if (r.created && !r.pending) out.briefs++;
                     } catch (err) {
                         out.failed++;
                         log.warn(`[Trade] AI brief for ${i.symbol} not made:`, err.message);

@@ -15,6 +15,12 @@
  *
  * Briefs are made after a company's report brings new numbers (the worker, trigger 'report') or when a reader asks
  * (POST /i/:symbol/brief, trigger 'reader'), within TRADE_BRIEFS_PER_HOUR for the whole site.
+ *
+ * A report brief asks OpenVibe.AI for the batch class: the run is queued now and collected on a later worker tick
+ * (trade_ai_brief_jobs keeps the pending run id and the exact inputs). The worker survives a restart because the
+ * queue is a table, not a promise. A batch refused at the door, or a run that ends without an answer, falls back
+ * to the background class once; a second failure sends the company back through the worker on a later tick. The
+ * reader's ask stays synchronous: the person is waiting on the page.
  */
 const crypto = require('crypto');
 const { ADVICE_RE } = require('./context');
@@ -25,15 +31,20 @@ const { ApiError } = require('../http/errors');
 const MAX_SOURCES = 50;
 const MAX_DOCS = 12;
 const PER_SERIES = 7;
+const FALLBACK_GRACE_MS = 30 * 60 * 1000;   // after the batch deadline, give OpenVibe.AI's reroute half an hour
 
 function createBriefs({ store, config, ctx, ai, log = console }) {
     const { db } = store;
     const q = {
         latest: db.prepare('SELECT * FROM trade_ai_briefs WHERE instrument_id = ? ORDER BY created_at DESC, id DESC LIMIT 1'),
+        byRun: db.prepare('SELECT * FROM trade_ai_briefs WHERE run_id = ? LIMIT 1'),
         recent: db.prepare(`SELECT b.*, i.symbol, i.name FROM trade_ai_briefs b JOIN trade_instruments i ON i.id = b.instrument_id
                             WHERE i.status = 'active' AND b.id = (SELECT id FROM trade_ai_briefs x WHERE x.instrument_id = b.instrument_id ORDER BY created_at DESC, id DESC LIMIT 1)
                             ORDER BY b.created_at DESC LIMIT ?`),
-        lastHour: db.prepare('SELECT COUNT(*) AS n FROM trade_ai_briefs WHERE created_at > ?'),
+        // The site's hourly budget counts a brief when it is written and a report brief when its batch is started
+        // (an open job has not been written yet, but it has been asked for and will be paid for).
+        lastHour: db.prepare(`SELECT (SELECT COUNT(*) FROM trade_ai_briefs WHERE created_at > ?)
+                            + (SELECT COUNT(*) FROM trade_ai_brief_jobs WHERE status IN ('pending', 'fallback') AND created_at > ?) AS n`),
         stats: db.prepare('SELECT COUNT(*) AS n, COUNT(DISTINCT instrument_id) AS companies FROM trade_ai_briefs'),
         insert: db.prepare(`INSERT INTO trade_ai_briefs (id, instrument_id, summary, points, cites, gaps, as_of, inputs_hash, run_id, model, trigger, created_at)
                             VALUES (@id, @instrument_id, @summary, @points, @cites, @gaps, @as_of, @inputs_hash, @run_id, @model, @trigger, @created_at)`),
@@ -41,11 +52,25 @@ function createBriefs({ store, config, ctx, ai, log = console }) {
                             ORDER BY metric, observed_at DESC, recorded_at DESC`),
         docs: db.prepare(`SELECT * FROM trade_source_documents WHERE instrument_id = ? AND removed_at IS NULL
                           ORDER BY COALESCE(published_at, retrieved_at) DESC LIMIT ?`),
-        // Companies whose numbers were read after their last brief (or that have none): a report brought new numbers.
+        // Companies whose numbers were read after their last brief (or that have none): a report brought new
+        // numbers. A company whose batch is still open is not due again: its work is already in flight.
         due: db.prepare(`SELECT i.* FROM trade_instruments i JOIN trade_facts_state s ON s.instrument_id = i.id
                           WHERE i.status = 'active' AND s.ok = 1 AND s.observations > 0
                             AND NOT EXISTS (SELECT 1 FROM trade_ai_briefs b WHERE b.instrument_id = i.id AND b.created_at >= s.fetched_at)
+                            AND NOT EXISTS (SELECT 1 FROM trade_ai_brief_jobs j WHERE j.instrument_id = i.id AND j.status IN ('pending', 'fallback'))
                           ORDER BY s.fetched_at ASC LIMIT ?`),
+        instrument: db.prepare('SELECT * FROM trade_instruments WHERE id = ?'),
+        job: db.prepare('SELECT * FROM trade_ai_brief_jobs WHERE instrument_id = ?'),
+        openJobs: db.prepare("SELECT * FROM trade_ai_brief_jobs WHERE status IN ('pending', 'fallback') ORDER BY created_at ASC LIMIT ?"),
+        upsertJob: db.prepare(`INSERT INTO trade_ai_brief_jobs (instrument_id, run_id, inputs, inputs_hash, status, attempts, deadline_at, created_at, updated_at)
+                               VALUES (?, ?, ?::jsonb, ?, 'pending', ?, ?, ?, ?)
+                               ON CONFLICT (instrument_id) DO UPDATE SET run_id = excluded.run_id, inputs = excluded.inputs, inputs_hash = excluded.inputs_hash,
+                                 status = 'pending', attempts = excluded.attempts, deadline_at = excluded.deadline_at, created_at = excluded.created_at, updated_at = excluded.updated_at
+                               WHERE trade_ai_brief_jobs.status IN ('done', 'failed') RETURNING *`),
+        claimFallback: db.prepare(`UPDATE trade_ai_brief_jobs SET status = 'fallback', attempts = attempts + 1, updated_at = ?
+                                   WHERE instrument_id = ? AND run_id = ? AND status = 'pending' RETURNING *`),
+        finishJob: db.prepare(`UPDATE trade_ai_brief_jobs SET status = 'done', updated_at = ? WHERE instrument_id = ? AND run_id = ? AND status IN ('pending', 'fallback')`),
+        failJob: db.prepare(`UPDATE trade_ai_brief_jobs SET status = 'failed', updated_at = ? WHERE instrument_id = ? AND run_id = ? AND status IN ('pending', 'fallback')`),
     };
 
     const fmtDay = (t) => (t == null ? 'no date' : new Date(Number(t)).toISOString().slice(0, 10));
@@ -94,34 +119,31 @@ function createBriefs({ store, config, ctx, ai, log = console }) {
             refs.push([{ kind: 'document', id: d.id, at: d.published_at || d.retrieved_at }]);
         }
         const hash = crypto.createHash('sha256').update(JSON.stringify(sources.map((s) => [s.source_id, s.content || s.snippet]))).digest('hex');
-        return { sources, refs, hash };
+        const input = {
+            instrument: { symbol: instrument.symbol, name: String(instrument.name).slice(0, 200), ...(instrument.exchange ? { exchange: instrument.exchange } : {}) },
+            stale_after_hours: 24 * 120,
+            sources,
+        };
+        return { sources, refs, hash, input };
     }
 
-    const lastHour = async () => (await q.lastHour.get(store.now() - 3600_000)).n;
+    const lastHour = async () => (await q.lastHour.get(store.now() - 3600_000, store.now() - 3600_000)).n;
+
+    const parse = (v, d) => { if (v == null) return d; if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch { return d; } };
+    const isUnique = (err) => String((err && err.code) || '') === '23505' || /unique|duplicate key/i.test(String((err && err.message) || ''));
 
     /**
-     * Write a brief for the instrument now. → { brief, created } (created false: the inputs are unchanged since the
-     * last brief). Throws ApiError: 409 nothing to write from, 429 the hourly budget is spent, 422 advice refused,
-     * 502/503 OpenVibe.AI.
+     * Write one run's output as this instrument's next brief. The run id is the idempotency key: an answer
+     * collected twice (a retried tick, a restart, another poller) is read once and never written twice.
+     * Throws ApiError when the answer is a stub, empty, or advice. → { brief, created }
      */
-    async function make(instrument, { trigger = 'report' } = {}) {
-        const { sources, refs, hash } = await inputsFor(instrument);
-        if (!sources.length) throw new ApiError(409, 'brief.no_inputs', `Trade has no SEC numbers or filings for ${instrument.symbol} yet, so there is nothing to write a brief from`);
-        const prior = await q.latest.get(instrument.id);
-        if (prior && prior.inputs_hash === hash) return { brief: view(prior), created: false };
-        if (await lastHour() >= config.briefs.perHour) throw new ApiError(429, 'brief.budget', 'The AI briefs budget for this hour is used up; try again later');
-
-        let r;
-        try {
-            r = await ai.run({
-                instrument: { symbol: instrument.symbol, name: String(instrument.name).slice(0, 200), ...(instrument.exchange ? { exchange: instrument.exchange } : {}) },
-                stale_after_hours: 24 * 120,
-                sources,
-            });
-        } catch (err) {
-            throw new ApiError(err.status || 502, err.code || 'ai.error', `No AI brief: ${err.message}`);
-        }
+    async function keep(instrument, r, { refs, hash }, trigger) {
+        if (!r) throw new ApiError(502, 'brief.no_run', 'OpenVibe.AI returned no run for the brief');
         if (r.stub) throw new ApiError(503, 'brief.stub', 'OpenVibe.AI answered with a placeholder (no model is configured); no brief was made');
+        if (r.runId) {
+            const previous = await q.byRun.get(r.runId);
+            if (previous) return { brief: view(previous), created: false, duplicate: true };
+        }
         const out = r.output || {};
         const gaps = Array.isArray(out.gaps) ? out.gaps.map((g) => String(g).slice(0, 300)).slice(0, 20) : [];
         const citeRefs = (list) => {
@@ -165,11 +187,162 @@ function createBriefs({ store, config, ctx, ai, log = console }) {
             id: newId('tbr', store.now()), instrument_id: instrument.id, summary, points: JSON.stringify(points), cites: JSON.stringify(cites),
             gaps: JSON.stringify(gaps.slice(0, 20)), as_of: asOf, inputs_hash: hash, run_id: r.runId, model: r.model, trigger, created_at: store.now(),
         };
-        await q.insert.run(row);
+        try {
+            await q.insert.run(row);
+        } catch (err) {
+            if (!isUnique(err)) throw err;
+            const previous = r.runId ? await q.byRun.get(r.runId) : null;
+            if (!previous) throw err;
+            return { brief: view(previous), created: false, duplicate: true };
+        }
         return { brief: view(await q.latest.get(instrument.id)), created: true };
     }
 
-    const parse = (v, d) => { if (v == null) return d; if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch { return d; } };
+    /** The run input and the Trade rows its citations will point at, for one instrument. */
+    async function prepare(instrument) {
+        const { sources, refs, hash, input } = await inputsFor(instrument);
+        if (!sources.length) throw new ApiError(409, 'brief.no_inputs', `Trade has no SEC numbers or filings for ${instrument.symbol} yet, so there is nothing to write a brief from`);
+        return { sources, refs, hash, input };
+    }
+
+    /** A batch run refused at the door: answer it once in the background, with the same input. */
+    async function startBackground(instrument, prepared, attempt) {
+        const { input, refs, hash } = prepared;
+        try {
+            const r = await ai.run(input, { latency: 'background', idempotencyKey: `trade-brief:${instrument.id}:${hash}:bg:${attempt}` });
+            return await keep(instrument, r, { refs, hash }, 'report');
+        } catch (err) {
+            throw new ApiError(err.status || 502, err.code || 'ai.error', `No AI brief: ${err.message}`);
+        }
+    }
+
+    /**
+     * Ask for one report brief in the batch class. → { brief, created, pending, runId }.
+     * The pending run id and the exact inputs are stored before this returns, so the answer survives a restart.
+     */
+    async function startBatch(instrument, prepared) {
+        const { input, refs, hash } = prepared;
+        const open = await q.job.get(instrument.id);
+        if (open && ['pending', 'fallback'].includes(open.status)) {
+            return { brief: null, created: false, pending: true, runId: open.run_id };
+        }
+        const attempt = open ? Math.max(1, Number(open.attempts) || 1) + 1 : 1;
+        let started;
+        try {
+            started = await ai.start(input, {
+                deadlineHours: config.briefs.batchDeadlineHours,
+                idempotencyKey: `trade-brief:${instrument.id}:${hash}:batch:${attempt}`,
+            });
+        } catch (err) {
+            // The batch class was refused (a batch deadline/limit, no native route, a quota, an unreachable
+            // service): the same run goes to the background class once, never in a loop.
+            log.warn(`[Trade] AI batch brief for ${instrument.symbol} refused (${err.code || err.status || 'error'}); falling back to background`);
+            return await startBackground(instrument, prepared, attempt);
+        }
+        if (started.done) return await keep(instrument, started, { refs, hash }, 'report');
+        const now = store.now();
+        const stored = await q.upsertJob.get(instrument.id, started.runId, JSON.stringify({ input, refs }), hash, attempt,
+            now + Math.max(1, Math.min(72, Number(config.briefs.batchDeadlineHours) || 24)) * 3600_000, now, now);
+        if (!stored) {
+            // Another start won the row between the read and the insert: it is the pending work item.
+            const current = await q.job.get(instrument.id);
+            return { brief: null, created: false, pending: true, runId: current ? current.run_id : started.runId };
+        }
+        return { brief: null, created: true, pending: true, runId: started.runId };
+    }
+
+    /**
+     * Write a brief for the instrument now. → { brief, created } (created false: the inputs are unchanged since the
+     * last brief). A report-triggered brief returns { pending: true } when its batch is queued. Throws ApiError: 409
+     * nothing to write from, 429 the hourly budget is spent, 422 advice refused, 502/503 OpenVibe.AI.
+     */
+    async function make(instrument, { trigger = 'report' } = {}) {
+        const prepared = await prepare(instrument);
+        const prior = await q.latest.get(instrument.id);
+        if (prior && prior.inputs_hash === prepared.hash) return { brief: view(prior), created: false };
+        if (await lastHour() >= config.briefs.perHour) throw new ApiError(429, 'brief.budget', 'The AI briefs budget for this hour is used up; try again later');
+        if (trigger === 'report' && config.briefs.batch !== false) return await startBatch(instrument, prepared);
+
+        let r;
+        try {
+            r = await ai.run(prepared.input);
+        } catch (err) {
+            throw new ApiError(err.status || 502, err.code || 'ai.error', `No AI brief: ${err.message}`);
+        }
+        return await keep(instrument, r, prepared, trigger);
+    }
+
+    /** One background attempt for a batch that ended without an answer, or passed its deadline. */
+    async function fallBack(job, instrument, prepared) {
+        const now = store.now();
+        const claimed = await q.claimFallback.get(now, instrument.id, job.run_id);
+        if (!claimed) return { brief: null, created: false, pending: true };   // another pass took it
+        const attempt = Number(claimed.attempts) || 2;
+        try {
+            const r = await ai.run(prepared.input, { latency: 'background', idempotencyKey: `trade-brief:${instrument.id}:${prepared.hash}:bg:${attempt}` });
+            const kept = await keep(instrument, r, prepared, 'report');
+            await q.finishJob.run(now, instrument.id, job.run_id);
+            return kept;
+        } catch (err) {
+            await q.failJob.run(now, instrument.id, job.run_id);
+            log.warn(`[Trade] AI brief for ${instrument.symbol} fell back and did not answer: ${err.message}`);
+            throw err;
+        }
+    }
+
+    /**
+     * The later pass: read every pending batch's answer (or fall back once when it is refused/expired), and write
+     * each brief at most once. → { briefs, pending, failed } (briefs written, still waiting, errors this pass).
+     */
+    async function collect(limit = 6) {
+        const out = { briefs: 0, pending: 0, failed: 0 };
+        const jobs = await q.openJobs.all(Math.max(1, Number(limit) || 1));
+        for (const job of jobs) {
+            const instrument = await q.instrument.get(job.instrument_id);
+            const saved = parse(job.inputs, null);
+            if (!instrument || !saved || !saved.input) { await q.failJob.run(store.now(), job.instrument_id, job.run_id); out.failed++; continue; }
+            const prepared = { input: saved.input, refs: Array.isArray(saved.refs) ? saved.refs : [], hash: job.inputs_hash };
+            // A fallback that was in progress when the process stopped: the same idempotency key reads the same run.
+            if (job.status === 'fallback') {
+                try {
+                    const r = await ai.run(prepared.input, { latency: 'background', idempotencyKey: `trade-brief:${instrument.id}:${prepared.hash}:bg:${job.attempts}` });
+                    const kept = await keep(instrument, r, prepared, 'report');
+                    await q.finishJob.run(store.now(), job.instrument_id, job.run_id);
+                    if (kept.created) out.briefs++;
+                } catch (err) {
+                    await q.failJob.run(store.now(), job.instrument_id, job.run_id);
+                    out.failed++;
+                    log.warn(`[Trade] AI brief for ${instrument.symbol} did not finish its fallback: ${err.message}`);
+                }
+                continue;
+            }
+            let run;
+            try { run = await ai.get(job.run_id); } catch (err) { out.failed++; log.warn(`[Trade] AI brief run ${job.run_id} not read: ${err.message}`); continue; }
+            if (run && ai.DONE.has(run.status)) {
+                try {
+                    const kept = await keep(instrument, run, prepared, 'report');
+                    await q.finishJob.run(store.now(), job.instrument_id, job.run_id);
+                    if (kept.created) out.briefs++;
+                } catch (err) {
+                    await q.failJob.run(store.now(), job.instrument_id, job.run_id);
+                    out.failed++;
+                    log.warn(`[Trade] AI brief for ${instrument.symbol} was refused: ${err.message}`);
+                }
+                continue;
+            }
+            const dead = !run || ai.FAILED.has(run.status) || store.now() >= Number(job.deadline_at) + FALLBACK_GRACE_MS;
+            if (dead) {
+                try {
+                    const kept = await fallBack(job, instrument, prepared);
+                    if (kept.created) out.briefs++;
+                    if (kept.pending) out.pending++;
+                } catch { out.failed++; }
+                continue;
+            }
+            out.pending++;
+        }
+        return out;
+    }
 
     function view(row) {
         if (!row) return null;
@@ -185,6 +358,7 @@ function createBriefs({ store, config, ctx, ai, log = console }) {
     return {
         enabled: ai.enabled,
         make,
+        collect,
         inputsFor,
         latest: async (instrument) => view(await q.latest.get(instrument.id)),
         recent: async (limit = 8) => (await q.recent.all(limit)).map(view),

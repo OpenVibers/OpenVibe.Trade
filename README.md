@@ -139,6 +139,10 @@ Trade shows only what a source stated:
   - written from a company's numbers and filings list only, when a report brings new numbers (the worker,
     `TRADE_BRIEFS_PER_TICK`) or when a reader asks (`POST /i/:symbol/brief`: same origin, 5 per address per 10
     minutes), within `TRADE_BRIEFS_PER_HOUR` for the whole site;
+  - the worker's report brief asks OpenVibe.AI for the `batch` latency class: the run id and the exact inputs are
+    kept in `trade_ai_brief_jobs` (migration `0009`), the answer is collected on a later tick, and a refused or
+    expired batch falls back to the `background` class once (`TRADE_BRIEFS_BATCH=off` keeps it synchronous;
+    `TRADE_BRIEFS_BATCH_DEADLINE_HOURS` defaults to 24). A reader's ask stays synchronous;
   - every kept point cites Trade's own observation or document rows, and an uncited point is dropped and listed;
   - text that reads as advice is refused, and so is a placeholder run;
   - shown labelled "AI-written, not reviewed by a person". They do not make a page indexable: that still needs a
@@ -300,8 +304,8 @@ services need to call Trade, is under [Grants the Network must hold](#grants-the
 - **OpenVibe.Network notifications:** Network consumes `trade.alert.triggered` (its `network`
   subscription) and puts a "Trade alert: <symbol>" notification in the rule owner's inbox, linking the
   instrument page; deliveries are also listed at `/watchlists`.
-- **OpenVibe.AI:** `ai.run.create` (namespace `trade`) for the AI briefs (`OV_AI_INTERNAL_URL`; off without it), and
-  optionally the drafts below.
+- **OpenVibe.AI:** `ai.run.create` (namespace `trade`) for the AI briefs, including the `batch` class for the
+  worker's report briefs (`OV_AI_INTERNAL_URL`; off without it), and optionally the drafts below.
 - **SEC EDGAR** (`data.sec.gov`, read directly, no key): XBRL company facts, public domain. Fair access: the
   User-Agent `TRADE_SEC_USER_AGENT` names us and a contact; requests are spaced `TRADE_SEC_MIN_INTERVAL_MS` (1 s)
   apart, at most `TRADE_SEC_PER_TICK` companies a tick. `TRADE_SEC_FACTS=off` turns it off.
