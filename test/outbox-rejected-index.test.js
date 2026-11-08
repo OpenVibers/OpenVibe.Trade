@@ -1,7 +1,7 @@
 'use strict';
 /**
  * The rejected-events count on /api/ready and the metrics gauges (openvibe-sdk outbox.status()) walks the
- * whole outbox without an index: 308 ms mean on the 2026-11-08 production read. Migration 0009 adds a
+ * whole outbox without an index: 308 ms mean on the 2026-11-08 production read. Migration 0010 adds a
  * partial index over the rejected rows only; this proves the count can use it and still answers the same.
  */
 const assert = require('assert');
@@ -12,7 +12,7 @@ const { testDb } = require('./helpers/db');
     try {
         const indexes = await db.prepare(`SELECT indexname FROM pg_indexes
             WHERE schemaname = current_schema() AND tablename = 'event_outbox'`).all();
-        assert.ok(indexes.some((r) => r.indexname === 'event_outbox_rejected'), 'migration 0009 created the partial index');
+        assert.ok(indexes.some((r) => r.indexname === 'event_outbox_rejected'), 'migration 0010 created the partial index');
 
         const now = Date.now();
         await db.prepare(`INSERT INTO event_outbox (event_id, envelope, created_at, next_attempt_at) VALUES
