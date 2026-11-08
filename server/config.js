@@ -121,6 +121,10 @@ function load(env = process.env) {
             intervalMs: Math.max(int(env.TRADE_BRIEFS_INTERVAL_MS, 10 * 60_000), 10_000),
             perTick: Math.max(int(env.TRADE_BRIEFS_PER_TICK, 6), 0),
             perHour: Math.max(int(env.TRADE_BRIEFS_PER_HOUR, 40), 0),
+            // The worker's report briefs ask OpenVibe.AI for the batch class. TRADE_BRIEFS_BATCH=off keeps them
+            // synchronous (an incident switch); the deadline is 1 to 72 hours and OpenVibe.AI's own default is 24.
+            batch: String(env.TRADE_BRIEFS_BATCH || 'on').trim().toLowerCase() !== 'off',
+            batchDeadlineHours: Math.max(1, Math.min(72, int(env.TRADE_BRIEFS_BATCH_DEADLINE_HOURS, 3))),
         },
         // The market-wide brief (domain/market-briefs.js): one UTC day at most, from the day's filings, euro rates and
         // companies with new filings or figures. Off when TRADE_MARKET_BRIEFS=off, and always off without OpenVibe.AI.
