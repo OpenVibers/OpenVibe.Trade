@@ -142,7 +142,7 @@ Trade shows only what a source stated:
   - the worker's report brief asks OpenVibe.AI for the `batch` latency class: the run id and the exact inputs are
     kept in `trade_ai_brief_jobs` (migration `0009`), the answer is collected on a later tick, and a refused or
     expired batch falls back to the `background` class once (`TRADE_BRIEFS_BATCH=off` keeps it synchronous;
-    `TRADE_BRIEFS_BATCH_DEADLINE_HOURS` defaults to 24). A reader's ask stays synchronous;
+    `TRADE_BRIEFS_BATCH_DEADLINE_HOURS` defaults to 3: a market brief older than that is stale, so it falls back to background). A reader's ask stays synchronous;
   - every kept point cites Trade's own observation or document rows, and an uncited point is dropped and listed;
   - text that reads as advice is refused, and so is a placeholder run;
   - shown labelled "AI-written, not reviewed by a person". They do not make a page indexable: that still needs a

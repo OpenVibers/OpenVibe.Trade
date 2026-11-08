@@ -128,7 +128,7 @@ const quiet = { log() {}, warn() {}, error() {} };
         const job = await db.prepare('SELECT * FROM trade_ai_brief_jobs WHERE instrument_id = ?').get(apple.id);
         assert.ok(job && job.status === 'pending' && /^run_batch_/.test(job.run_id), 'the pending run id is kept with the work item');
         assert.strictEqual(job.inputs_hash.length, 64);
-        assert.strictEqual(aiRuns.get(job.run_id).opts.deadlineHours, 24, 'the run asks for the batch class with a deadline');
+        assert.strictEqual(aiRuns.get(job.run_id).opts.deadlineHours, 3, 'the run asks for the batch class with a deadline (a market brief is stale after 3 h)');
         assert.match(aiRuns.get(job.run_id).opts.idempotencyKey, /:batch:1$/, 'a retried start replays the same run');
         assert.strictEqual(await t.ctx.briefs.latest(apple), null, 'no brief before the answer is read');
         answerBatch(job.run_id);
@@ -226,7 +226,7 @@ const quiet = { log() {}, warn() {}, error() {} };
         const job = await db.prepare('SELECT * FROM trade_ai_brief_jobs WHERE instrument_id = ?').get(amd.id);
         assert.ok(job && job.status === 'pending');
         const before = backgroundCalls;
-        t.clock.advance(25 * 3600_000);                         // past the 24 h deadline and the 30 min grace
+        t.clock.advance(4 * 3600_000);                          // past the 3 h deadline and the 30 min grace
         const tick = await t.ctx.worker.briefsTick();           // the run is still 'queued' in the mock
         assert.strictEqual(backgroundCalls, before + 1, 'one background run, not a retry loop');
         assert.strictEqual(tick.briefs, 1);
