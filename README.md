@@ -2,6 +2,9 @@
 
 > Informational watchlists, sourced market context and alerts. No custody, no order execution.
 
+**Live site:** https://openvibe.trade · **API docs:** https://openvibe.services · **For AI:** https://openvibe.trade/llms.txt
+**Run it:** `npm ci && npm run dev` (Node 22 or newer) · **Tests:** `npm test`
+
 **Status:** alpha (roadmap Wave 19). The service runs, its tests pass, and it is **public at its
 domain, [openvibe.trade](https://openvibe.trade), since 2026-10-09**, after an independent
 pre-launch security review whose fixes shipped first. Since 2026-10-15 it carries about 8,000
