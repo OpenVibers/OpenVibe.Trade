@@ -9,7 +9,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .account-bar { max-width: 1040px; margin: 0 auto; padding: 6px 16px 0; text-align: right; font-size: 14px; color: var(--text-secondary, #96a7c2); }
 .disclaimer { max-width: 1040px; margin: 8px auto 0; padding: 8px 16px; border: 1px solid var(--warning, #f59e0b); border-radius: 8px; font-size: .95rem; background: var(--bg-card, #131c2e); }
 .disclaimer-foot { margin: 24px auto; }
-.page { max-width: 1040px; margin: 0 auto; padding: 16px 16px 48px; min-height: 60vh; }
+.page { max-width: 1040px; margin: 0 auto; padding: 16px 16px 0; min-height: 60vh; }
 /* The showcase (openvibe-shared showcase.css) pads its sections 24px each side for full-width pages; inside .page,
    which has its own padding, that put the hero and "How it works" 24px right of everything after them. */
 .page > .sc-hero, .page > .sc-sec, .page > .sc-cta { padding-left: 0; padding-right: 0; }
