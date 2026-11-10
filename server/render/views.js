@@ -180,7 +180,7 @@ function instrumentsPage({ page, urls, pager, latest, latestDocs }) {
   <input id="q" name="q" type="search" maxlength="200" required>
   <button type="submit">Find</button>
 </form>
-${page.instruments.length ? html`${instrumentsTable({ instruments: page.instruments, latest, latestDocs, urls })}${raw(paginationHtml(pager))}` : html`<p class="empty">No instruments have been added yet.</p>`}`;
+${page.instruments.length ? html`${instrumentsTable({ instruments: page.instruments, latest, latestDocs, urls })}${raw(paginationHtml(pager))}` : raw(kit.empty({ icon: 'list', title: 'No instruments have been added yet', text: 'Companies and currencies appear once a source has reported them.', action: { href: '/sources', label: 'See the sources', icon: 'live' } }))}`;
 }
 
 /** One filing as a list line: company, form (with its plain name), title, published and retrieved. */

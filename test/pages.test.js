@@ -220,6 +220,14 @@ const WORDS = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
         assert.ok(body.includes('Frankfurter (ECB data)'));
     });
 
+    await check('an empty instruments list draws the kit empty state and one button', () => {
+        const views = require('../server/render/views');
+        const body = String(views.instrumentsPage({ page: { instruments: [], total: 0 }, urls: {}, pager: {} }));
+        assert.match(body, /class="ovk-empty"/, 'the kit empty state is used, not a bare sentence');
+        assert.match(body, /No instruments have been added yet/);
+        assert.match(body, /class="ovk-btn[^"]*" href="\/sources"/, 'the empty state offers one button forward');
+    });
+
     await t.close();
     done();
 })();
