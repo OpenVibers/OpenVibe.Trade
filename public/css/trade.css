@@ -58,7 +58,6 @@ form.inline { display: inline; }
 form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
 .inline-form { margin: 10px 0; }
 .inline-form label { display: inline-block; margin-right: 6px; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (max-width: 700px) {
   h1 { font-size: 1.5rem; }
 }
@@ -124,7 +123,6 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
   .tr-stats > li { flex: 0 0 auto; width: 132px; scroll-snap-align: start; }
   .tr-fold > summary span { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .tr-stats a { transition: none; } }
 .home .disclaimer { max-width: 1048px; }
 .tr-more-rates { margin-top: 8px; }
 .tr-more-rates summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
