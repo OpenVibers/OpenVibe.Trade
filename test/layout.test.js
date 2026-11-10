@@ -2,7 +2,7 @@
 /**
  * The page shell (server/render/layout.js) is openvibe-publishing/layout's document (openvibe-shared/shell
  * page()): one title, the canonical and robots from the gate's decision, the JSON-LD, feed links, the Trade
- * stylesheet, the boost marker, the Frame (navbar mount, noscript navigation, footer and its init) and the
+ * stylesheet, the boost marker, the Frame (navbar mount, server-rendered navigation, footer and its init) and the
  * disclaimers Trade shows on every page.
  */
 const assert = require('assert');
@@ -34,7 +34,7 @@ const count = (html, re) => (html.match(re) || []).length;
             assert.ok(/<meta name="ov-boost" content="trade@[^"]+">/.test(head), `${path}: boost marker`);
             assert.ok(head.includes('<script src="/shared/web-runtime.js'), `${path}: the shared web runtime`);
             assert.ok(body.includes('<div id="navbar-mount"></div>'), `${path}: the navbar mount`);
-            assert.ok(body.includes('<nav aria-label="Site"'), `${path}: the noscript navigation`);
+            assert.ok(body.includes('<nav class="openvibe-navbar" aria-label="Site"'), `${path}: the server-rendered navigation`);
             assert.ok(body.includes('id="ov-footer"'), `${path}: the server-rendered footer`);
             assert.ok(body.includes('OpenVibeFooter.init(window.__OV_PAGE.footer)'), `${path}: the footer is initialised`);
             assert.ok(body.includes('class="disclaimer"') && body.includes('disclaimer-foot'), `${path}: both disclaimers`);
