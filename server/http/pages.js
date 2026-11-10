@@ -124,7 +124,7 @@ function createPages(ctx) {
         common.page(req, res, {
             title: pageNo === 1 ? 'Companies and currencies' : `Companies and currencies, page ${pageNo}`, canonical: urls.abs(path), decision: listing(path),
             description: 'US-listed companies from the SEC\'s list and euro reference currencies, the newest filing or figure first, each with its source and time.',
-            feeds: FEEDS, body: views.instrumentsPage({ page, urls, pager, ...await headlines(page.instruments, ctx.store.now()) }),
+            feeds: FEEDS, styles: ['kit.css'], body: views.instrumentsPage({ page, urls, pager, ...await headlines(page.instruments, ctx.store.now()) }),
         });
     });
 
