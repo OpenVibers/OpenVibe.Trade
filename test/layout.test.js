@@ -33,7 +33,7 @@ const count = (html, re) => (html.match(re) || []).length;
             assert.ok(/<link rel="stylesheet" href="\/css\/trade\.css\?v=[0-9a-f]+">/.test(head), `${path}: the Trade stylesheet`);
             assert.ok(/<meta name="ov-boost" content="trade@[^"]+">/.test(head), `${path}: boost marker`);
             assert.ok(head.includes('<script src="/shared/web-runtime.js'), `${path}: the shared web runtime`);
-            assert.ok(body.includes('<div id="navbar-mount"></div>'), `${path}: the navbar mount`);
+            assert.ok(body.includes('<div id="navbar-mount"'), `${path}: the navbar mount (4.190.0: the mount wraps the server-rendered nav, with the site name's dropdown inside)`);
             assert.ok(body.includes('<nav class="openvibe-navbar" aria-label="Site"'), `${path}: the server-rendered navigation`);
             assert.ok(body.includes('id="ov-footer"'), `${path}: the server-rendered footer`);
             assert.ok(body.includes('OpenVibeFooter.init(window.__OV_PAGE.footer)'), `${path}: the footer is initialised`);
