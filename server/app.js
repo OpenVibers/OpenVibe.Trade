@@ -117,7 +117,7 @@ async function createApp(opts = {}) {
         clientId: config.oauth.clientId, clientSecret: config.oauth.clientSecret,
         redirectUri: config.oauth.redirectUri, scope: config.oauth.scope,
         networkUrl: config.networkUrl, networkInternalUrl: config.networkInternalUrl,
-        issuer: config.issuer || config.networkUrl, secureCookies: config.cookies.secure, log,
+        issuer: config.issuer || config.networkUrl, secureCookies: config.cookies.secure, relatedPasskeys: true, log,
     });
     ctx.jwks = jwksClient(ctx.jwksUrl, { log });
     ctx.jwks.keys().catch(() => {});   // warm the key cache at boot (non-fatal if the Network is down)
