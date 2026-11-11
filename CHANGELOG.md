@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Sign in with a passkey on Trade's own origin (WebAuthn Related Origin Requests). The signed-out account line offers
+  "Use a passkey" only after `PublicKeyCredential.getClientCapabilities()` reports `relatedOrigins`; the browser
+  ceremony is brokered by `POST /auth/passkey/options` and `/verify` (SDK 0.151.0) with Trade's OAuth client, and
+  Network verifies the exact origin and RP ID. Browsers without support and people without a key keep the ordinary
+  OpenVibe sign-in. `server/app.js` (`relatedPasskeys`), `server/render/layout.js`, `public/js/passkey-signin.js`.
+
 - Worker-written AI briefs ask OpenVibe.AI for the `batch` latency class: the pending run id and the exact inputs live in `trade_ai_brief_jobs` (migration `0009`), the worker collects the answer on a later tick, a run id is written once, and a refused or expired batch falls back to `background` once; a reader's ask stays synchronous. `test/ai-briefs.test.js`.
 - The instrument page carries the market-research outcomes the data backs: every observation shows the source URL and the source's own reference (`source_ref`), when the value was true, when it was fetched, and a stale verdict with the value's `max_age_sec` and a plain reason; a "Free, always" line; one-tap watchlist (new `POST /watchlists/watch`) and new-filing alert actions, with the configured limits stated instead of a no-cap claim; price rows are labelled source-stated, not live, and no delay is invented. Observation rows are compact on phones, with the long provenance in a closed "Source details" fold; the source table uses the OpenVibe Kit and stacks on phones. `test/market-outcomes.test.js`.
 - The front page is curated (`server/render/home.js`): a company search and the numbers beside the hero (companies, filings in 24 hours, filings recorded, companies with figures, AI briefs, currencies), then AI briefs as cards, euro reference rates as cards with the change from the same source, new 10-K/10-Q reports, the week's filings by form in plain words, the newest filings, companies with something new, what is here and six questions (FAQPage JSON-LD). The instruments list moved to `/instruments` (301 from `/?page=N`); `/filings[?form=]` is new; `/sitemaps/pages.xml` lists `/`, `/instruments`, `/filings` and `/sources` (the sitemap listed nothing before: instrument pages stay noindex until a person reviews their context). The navbar reads Companies, Filings, Sources, Watchlists.

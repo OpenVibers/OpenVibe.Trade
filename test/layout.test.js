@@ -47,6 +47,9 @@ const count = (html, re) => (html.match(re) || []).length;
         assert.ok(home.includes('Recently shipped on OpenVibe.Trade'), 'the shipped line stays on the home page');
         const page = (await t.get('/i/ACME')).text;
         assert.ok(count(page.slice(0, page.indexOf('</head>')), /<script type="application\/ld\+json">/g) >= 1, 'JSON-LD on the instrument page');
+        assert.ok(/<script src="\/js\/passkey-signin\.js\?v=[0-9a-f]+" defer><\/script>/.test(home), 'the feature-detecting script');
+        const signedIn = (await t.get('/watchlists', { as: t.alice })).text;
+        assert.ok(!signedIn.includes('/js/passkey-signin.js'), 'no passkey script once signed in');
     });
 
     await t.close();
