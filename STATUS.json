@@ -9,13 +9,13 @@
   "domain": "openvibe.trade",
   "scope": "informational only (ADR-025): no custody, no order execution, no escrow, no listings between users, no personalised advice",
   "contracts": "openvibe-contracts v0.399.0",
-  "sdk": "openvibe-sdk v0.146.0",
+  "sdk": "openvibe-sdk v0.147.0",
   "shared": "openvibe-shared v4.200.0",
   "packages": [
     "openvibe-contracts v0.399.0",
     "openvibe-publishing v1.7.0",
     "openvibe-shared v4.200.0",
-    "openvibe-sdk v0.146.0"
+    "openvibe-sdk v0.147.0"
   ],
   "capabilities": [
     "trade.instrument.resolve",
