@@ -473,7 +473,7 @@ First install (done once; kept for a rebuild):
 Part of the [OpenVibe network](https://openvibe.network). Built in the open by [OpenVibers](https://github.com/OpenVibers).
 
 <!-- versions:start -->
-- openvibe-contracts: v0.416.0
+- openvibe-contracts: v0.417.0
 - openvibe-sdk: v0.160.0
 - openvibe-shared: v4.223.1
 - openvibe-publishing: v1.7.0
