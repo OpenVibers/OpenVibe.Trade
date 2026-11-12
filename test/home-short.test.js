@@ -31,9 +31,9 @@ const quiet = { log() {}, warn() {}, error() {} };
             const page = r.text;
             const block = page.slice(page.indexOf('<div class="pick" id="pick-data">'), page.indexOf('<div class="pick" id="pick-data">') + 6000);
             assert.ok(block.startsWith('<div class="pick" id="pick-data">'), 'the pick block is on the home');
-            assert.ok(!/<input type="radio"/.test(block), 'no radio in the pick block');
-            assert.match(block, /<nav class="pick-row" aria-label="The market, by kind">/);
-            const chips = [...block.matchAll(/<a class="pick-chip" href="#([a-z]+)">[^<]+<\/a>/g)];
+            assert.ok(/<input type=\"radio\" class=\"ov-parts-r\"[^>]* checked>/.test(block), 'the first part is open on a phone (Shared pick(): tabs, 11-12)');
+            assert.match(block, /<div class=\"ov-parts ov-parts--front\" data-parts=\"\d+\">/, 'its parts are tabs on a phone');
+            const chips = [...block.matchAll(/<label for="ovp-[a-z0-9]+-([a-z]+)">[^<]+(?: <span class="ov-parts-n">[^<]*<\/span>)?<\/label>/g)];
             assert.ok(chips.length >= 4, `a link per pane (${chips.length})`);
             // Every pane is in the page, and every link points at one of them.
             const panes = [...block.matchAll(/<div class="pick-pane" id="([a-z]+)">/g)].map((m) => m[1]);
