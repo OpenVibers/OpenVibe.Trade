@@ -77,7 +77,7 @@ function renderPage(o) {
     };
     // This site's own account links live in the shared navbar's account menu (the page's account
     // bar below is only for visitors without JavaScript).
-    if (signedIn) nav.menu = { before: [...(viewer.editor ? [{ label: 'Editor', href: '/editor', icon: 'fa-pen' }] : []), { label: 'Your watchlists', href: '/watchlists', icon: 'fa-list' }] };
+    if (signedIn) nav.menu = { before: [...(viewer.editor ? [{ label: 'Editor', href: '/editor', icon: 'pencil' }] : []), { label: 'Your watchlists', href: '/watchlists', icon: 'list' }] };
     const footer = { service: 'trade', variant: 'auto', path: o.path, mount: '#ov-footer', brandName: SITE_NAME, updates: '/updates' };   // full on the front page only (Shared 4.19)
     const account = signedIn
         ? `${viewer.editor ? '<a href="/editor">Editor</a> · ' : ''}<a href="/watchlists">Your watchlists</a> · <a href="/auth/logout?next=${loginNext}">Sign out</a>`
