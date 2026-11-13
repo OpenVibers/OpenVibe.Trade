@@ -21,6 +21,7 @@ function grouped(value) {
 const { html, raw, breadcrumbsHtml, paginationHtml } = require('openvibe-publishing/ssr');
 const showcase = require('openvibe-shared/showcase');
 const kit = require('openvibe-shared/kit');
+const glyphs = require('openvibe-shared/glyphs');
 
 const ISO = (v) => (v == null ? null : (typeof v === 'number' ? new Date(v).toISOString() : String(v)));
 
@@ -242,7 +243,7 @@ function observationsList(instrument, observations, sourceNames = new Map()) {
 <div class="obs-value-row"><div class="obs-value"><data value="${o.value}">${grouped(o.value)}</data> <small>${o.unit}${o.currency && o.currency !== o.unit ? ` ${o.currency}` : ''}</small></div>
 <span class="ovk-badge ovk-badge--${o.freshness.stale ? 'warn' : 'ok'}" title="${freshnessTitle(o)}">${o.freshness.stale ? `stale${o.freshness.stale_since ? html` since ${shortWhen(o.freshness.stale_since)}` : ''}` : 'current'}</span></div>
 ${price ? html`<div class="obs-note">Not a live quote</div>` : ''}
-<p class="obs-line">Observed <time datetime="${ISO(o.observed_at)}">${shortWhen(o.observed_at)}</time> · ${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${sourceName} ↗</a>` : html`${sourceName}`}</p>
+<p class="obs-line">Observed <time datetime="${ISO(o.observed_at)}">${shortWhen(o.observed_at)}</time> · ${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${sourceName} ${raw(glyphs.svg('open', { size: 14 }))}</a>` : html`${sourceName}`}</p>
 <details class="obs-details"><summary>Source details</summary>
 <dl class="obs-detail-grid">
 <dt>Retrieved</dt><dd><time datetime="${ISO(o.retrieved_at)}">${fullWhen(o.retrieved_at)}</time></dd>
