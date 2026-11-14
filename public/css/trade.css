@@ -9,7 +9,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .account-bar { max-width: 1040px; margin: 0 auto; padding: 6px 16px 0; text-align: right; font-size: 14px; color: var(--text-secondary, #96a7c2); }
 .disclaimer { max-width: 1040px; margin: 8px auto 0; padding: 8px 16px; border: 1px solid var(--warning, #f59e0b); border-radius: 8px; font-size: .95rem; background: var(--bg-card, #131c2e); }
 .disclaimer-foot { margin: 24px auto; }
-.page { max-width: 1040px; margin: 0 auto; padding: 16px 16px 0; min-height: 60vh; }
+.page { max-width: 1040px; margin: 0 auto; padding: 12px 16px 0; min-height: 60vh; }
 /* The showcase (openvibe-shared showcase.css) pads its sections 24px each side for full-width pages; inside .page,
    which has its own padding, that put the hero and "How it works" 24px right of everything after them. */
 .page > .sc-hero, .page > .sc-sec, .page > .sc-cta { padding-left: 0; padding-right: 0; }
@@ -42,7 +42,7 @@ tr.is-stale td, tr.is-stale th { background: rgba(245, 158, 11, .07); }
 .notice.error { border-color: var(--danger, #ef4444); }
 .card { border: 1px solid var(--border, #1f2d47); border-radius: 10px; padding: 12px 16px; margin: 16px 0; background: var(--bg-card, #131c2e); }
 .revisions { list-style: none; padding: 0; }
-.ov-breadcrumbs ol { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; font-size: .9rem; }
+.ov-breadcrumbs ol { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 6px; font-size: .9rem; }
 .ov-breadcrumbs li + li::before { content: "›"; margin-right: 6px; color: var(--text-muted); }
 .ov-pagination { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
 label { display: block; margin: 8px 0 4px; font-weight: 600; font-size: .95rem; }
@@ -174,3 +174,7 @@ form.inline button { margin: 0; padding: 2px 10px; font-size: .85rem; }
   .tr-fold-block .tr-faq { margin-top: 12px; }
 }
 @media (max-width: 640px) { .tr-fold-block { margin-top: 24px; } .tr-fold-block > summary h2 { font-size: 1.05rem; } }
+/* Design rule 201: the intro is one line on a computer, at most two on a phone. */
+@media (max-width: 640px) { .lede, .tr-lede { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } }
+/* Design rule 201 (the owner, 11-14): a page starts within 12 px of the bar, 8 px on a phone. */
+@media (max-width: 640px) { .page { padding-top: 8px; } }
