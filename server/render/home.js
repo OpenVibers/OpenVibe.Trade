@@ -11,6 +11,7 @@
  */
 const { html, raw } = require('openvibe-publishing/ssr');
 const showcase = require('openvibe-shared/showcase');
+const glyphs = require('openvibe-shared/glyphs');
 const { when, staleBadge, grouped, clip, formLabel, filingLine, instrumentsTable } = require('./views');
 const { pickBlock, foldBlock } = require('./short');
 
@@ -19,7 +20,7 @@ const count = (n) => Number(n).toLocaleString('en-US');
 function section({ id, title, lede, more, body, note }) {
     if (!body) return '';
     return html`<section class="tr-sec" aria-labelledby="${id}-h">
-<div class="tr-head"><h2 id="${id}-h">${title}</h2>${more ? html`<a class="tr-more" href="${more.href}">${more.label}<span aria-hidden="true"> →</span></a>` : ''}</div>
+<div class="tr-head"><h2 id="${id}-h">${title}</h2>${more ? html`<a class="tr-more" href="${more.href}">${more.label}<span aria-hidden="true"> ${raw(glyphs.svg('arrow-right', { size: 14 }))}</span></a>` : ''}</div>
 ${lede ? html`<p class="tr-lede">${lede}</p>` : ''}
 ${raw(String(body))}
 ${note ? html`<p class="muted">${note}</p>` : ''}
@@ -160,7 +161,7 @@ ${marketBriefBody(b)}
 /** No reviewed brief yet: the home links to the unreviewed one's own (noindex) page, and shows no AI text. */
 function marketBriefTeaser(b) {
     if (!b) return '';
-    return html`<p class="tr-market-teaser"><a href="/market/${b.date}">Today's market brief (AI-written, not yet reviewed) <span aria-hidden="true">→</span></a></p>`;
+    return html`<p class="tr-market-teaser"><a href="/market/${b.date}">Today's market brief (AI-written, not yet reviewed) <span aria-hidden="true"> ${raw(glyphs.svg('arrow-right', { size: 14 }))}</span></a></p>`;
 }
 
 /** One brief's own page: /market/<YYYY-MM-DD>, with the gate's noindex until a person reviews it. */
