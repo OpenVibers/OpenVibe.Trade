@@ -38,7 +38,7 @@ const HOUR = 3600e3;
         assert.ok(html.includes('Retrieved'), 'the retrieval time is in the fold');
         assert.ok(html.includes(`datetime="${t.iso(t.T0 - 60e3)}"`), 'when the value was true');
         assert.ok(html.includes(`datetime="${t.iso(t.T0)}"`), 'when we fetched it');
-        assert.ok(html.includes('Test feed ↗'), 'the source name links out');
+        assert.ok(/Test feed <svg/.test(html) || html.includes('Test feed <i'), 'the source name links out, with a drawn glyph (design rule 169)');
         assert.ok(html.includes('ACME-2026-09-22-close'), 'the source\'s own reference for the datum');
         assert.ok(html.includes('https://example.org/acme/2026-09-22'), 'the source URL, as text and as a link');
         assert.ok(html.includes('Current: inside its 1 hour maximum age and the source freshness window.'), 'max_age_sec rendered, not a hand-typed number');
