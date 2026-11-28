@@ -36,7 +36,7 @@ const HOUR = 3600e3;
         assert.strictEqual(json.sources[0].stale_since, iso(t.T0 + HOUR));
         const page = await t.get('/i/ACME');
         assert.ok(page.text.includes('ovk-badge--warn" title="The source is behind its own freshness window.">stale since 22 Sep 13:00 UTC</span>'), 'explicit stale-since pill');
-        assert.ok(page.text.includes('<span class="badge stale">stale</span> since <time datetime="2026-09-22T13:00:00.000Z">2026-09-22 13:00 UTC</time>'), 'the source table keeps its stale-since label');
+        assert.ok(page.text.includes('<span class="badge stale">stale</span> since <time datetime="2026-09-22T13:00:00.000Z" data-ov-time="datetime">2026-09-22 13:00 UTC</time>'), 'the source table keeps its stale-since label, said in the reader\'s zone');
         assert.ok(page.text.includes('<data value="10.50">10.50</data>'), 'the old value stays visible with its timestamps');
         assert.ok(/class="obs-item is-stale"/.test(page.text));
     });

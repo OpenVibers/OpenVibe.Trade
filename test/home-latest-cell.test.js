@@ -10,5 +10,7 @@ const latest = new Map([[1, { value: 1.6172, unit: 'AUD', metric: 'rate', period
 const out = String(views.instrumentsTable({ instruments, urls, latest }));
 const cell = out.slice(out.indexOf('<td class="num">'), out.indexOf('</td>', out.indexOf('<td class="num">')));
 assert.ok(cell.includes('<time datetime="2026-10-17T00:00:00.000Z">2026-10-17 00:00 UTC</time>'), cell);
+// Midnight UTC is a date the source stated: no data-ov-time, since a zone west of UTC would name the day before (item 13).
+assert.ok(!cell.includes('data-ov-time'), cell);
 assert.ok(!out.includes('&lt;time'), 'no escaped markup');
 console.log('home latest cell: all checks passed');
