@@ -25,13 +25,30 @@ const glyphs = require('openvibe-shared/glyphs');
 
 const ISO = (v) => (v == null ? null : (typeof v === 'number' ? new Date(v).toISOString() : String(v)));
 
-/** A timestamp as `<time>` in UTC to the minute, or the given fallback text. */
+/**
+ * A moment the reader's own zone can say: Shared's theme loader rewrites <time data-ov-time> in the reader's zone and
+ * clock (plan item 13: briefs and observations read in UTC for everyone). Exactly midnight UTC is a date a source
+ * stated ("figures to 2026-08-31", stored as that day 00:00 UTC): it keeps its UTC words, since a zone west of UTC would
+ * name the day before.
+ */
+const isMoment = (d) => d.getUTCHours() + d.getUTCMinutes() + d.getUTCSeconds() + d.getUTCMilliseconds() !== 0;
+/** `words` in a <time> for `v`, said in the reader's zone when it is a moment; just the words when `v` is no time. */
+function timeTag(v, words) {
+    const s = ISO(v);
+    const d = s ? new Date(s) : null;
+    if (!d || Number.isNaN(d.getTime())) return html`${words}`;
+    return isMoment(d)
+        ? html`<time datetime="${d.toISOString()}" data-ov-time="datetime">${words}</time>`
+        : html`<time datetime="${d.toISOString()}">${words}</time>`;
+}
+
+/** A timestamp as `<time>` (UTC words to the minute, the reader's zone once the page loads), or the given fallback text. */
 function when(v, fallback = 'not stated by the source') {
     const s = ISO(v);
     if (!s) return html`<span class="muted">${fallback}</span>`;
     const d = new Date(s);
     if (Number.isNaN(d.getTime())) return html`<span class="muted">${fallback}</span>`;
-    return html`<time datetime="${d.toISOString()}">${d.toISOString().slice(0, 16).replace('T', ' ')} UTC</time>`;
+    return timeTag(d.toISOString(), `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`);
 }
 
 function staleBadge(f) {
@@ -243,10 +260,10 @@ function observationsList(instrument, observations, sourceNames = new Map()) {
 <div class="obs-value-row"><div class="obs-value"><data value="${o.value}">${grouped(o.value)}</data> <small>${o.unit}${o.currency && o.currency !== o.unit ? ` ${o.currency}` : ''}</small></div>
 <span class="ovk-badge ovk-badge--${o.freshness.stale ? 'warn' : 'ok'}" title="${freshnessTitle(o)}">${o.freshness.stale ? `stale${o.freshness.stale_since ? html` since ${shortWhen(o.freshness.stale_since)}` : ''}` : 'current'}</span></div>
 ${price ? html`<div class="obs-note">Not a live quote</div>` : ''}
-<p class="obs-line">Observed <time datetime="${ISO(o.observed_at)}">${shortWhen(o.observed_at)}</time> · ${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${sourceName} ${raw(glyphs.svg('open', { size: 14 }))}</a>` : html`${sourceName}`}</p>
+<p class="obs-line">Observed ${timeTag(o.observed_at, shortWhen(o.observed_at))} · ${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${sourceName} ${raw(glyphs.svg('open', { size: 14 }))}</a>` : html`${sourceName}`}</p>
 <details class="obs-details"><summary>Source details</summary>
 <dl class="obs-detail-grid">
-<dt>Retrieved</dt><dd><time datetime="${ISO(o.retrieved_at)}">${fullWhen(o.retrieved_at)}</time></dd>
+<dt>Retrieved</dt><dd>${timeTag(o.retrieved_at, fullWhen(o.retrieved_at))}</dd>
 <dt>Source reference</dt><dd><code class="obs-ref">${o.source.ref}</code></dd>
 <dt>Source URL</dt><dd>${o.source.url ? html`<a href="${o.source.url}" rel="nofollow noopener">${o.source.url}</a>` : html`<span class="muted">No source URL recorded.</span>`}</dd>
 <dt>Freshness</dt><dd>${freshnessExplanation(o)}</dd>
@@ -616,4 +633,4 @@ const observationStyles = `
 @media (min-width: 700px) { .obs-item { padding: 11px 14px 8px; } .obs-value { font-size: 1.6rem; } }
 `;
 
-module.exports = { observationStyles, instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, watchlistPage, watchlistGate, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip };
+module.exports = { observationStyles, instrumentsTable, instrumentsPage, filingsPage, filingLine, formLabel, FORM_LABEL, recentBriefs, tradeShowcase, resolvePage, instrumentPage, sourcesPage, watchlistsPage, watchlistPage, watchlistGate, editorHome, editorInstrument, errorPage, when, staleBadge, grouped, clip, timeTag };
