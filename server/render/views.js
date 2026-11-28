@@ -48,7 +48,8 @@ function when(v, fallback = 'not stated by the source') {
     if (!s) return html`<span class="muted">${fallback}</span>`;
     const d = new Date(s);
     if (Number.isNaN(d.getTime())) return html`<span class="muted">${fallback}</span>`;
-    return timeTag(d.toISOString(), `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`);
+    // A date the source stated (midnight UTC) reads as the date alone ("figures to 2026-08-31"), not "00:00 UTC".
+    return timeTag(d.toISOString(), isMoment(d) ? `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC` : d.toISOString().slice(0, 10));
 }
 
 function staleBadge(f) {
